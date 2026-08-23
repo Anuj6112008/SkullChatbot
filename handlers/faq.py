@@ -8,7 +8,7 @@ from services.video import VideoService
 from services.support import SupportService
 from services.registration import RegistrationService
 from services.onboarding import OnboardingService, ACTIVE_STATES
-from keyboards import get_start_keyboard, get_back_keyboard, get_end_faq_keyboard
+from keyboards import get_start_keyboard, get_back_keyboard
 from utils import sanitize_text
 
 logger = logging.getLogger(__name__)
@@ -32,16 +32,13 @@ class FAQHandler:
         bot = self.bot
 
         def is_faq_eligible(message: Message) -> bool:
-            """Ensure message is ONLY processed by FAQ if no active onboarding/support/registration owns it."""
             if not message.text or message.text.startswith('/'):
                 return False
             telegram_id = message.from_user.id
 
-            # If user is in any onboarding state, onboarding handler owns the message
             if self.onboarding_service.is_in_onboarding(telegram_id):
                 return False
 
-            # Check DB state directly for persistence safety
             state = self.onboarding_service.get_state(telegram_id)
             if state in ACTIVE_STATES:
                 return False
@@ -77,6 +74,7 @@ class FAQHandler:
                 bot.send_chat_action(telegram_id, "typing")
                 response = ai_service.generate_response(text, user)
 
+                # If support ticket is needed
                 if response.get("support_needed"):
                     ticket = self.support_service.create_ticket(
                         telegram_id,
@@ -87,16 +85,15 @@ class FAQHandler:
                         self.support_service.notify_admin_about_ticket(ticket)
                     bot.send_message(
                         telegram_id,
-                        response.get("response", "I'm forwarding your issue to support."),
-                        reply_markup=get_end_faq_keyboard()
+                        response.get("response", "Mee query support team ki forward chesam. Thvaralo reply istharu.")
                     )
                     return
 
-                reply_text = response.get("response", "I understand your question. Please contact support for more details.")
+                # Send pure natural text response without "End FAQ" buttons
+                reply_text = response.get("response", "Mee question ardhamaindi. More details kosam support team ni contact avvandi.")
                 bot.send_message(
                     telegram_id,
-                    reply_text,
-                    reply_markup=get_end_faq_keyboard()
+                    reply_text
                 )
 
                 intent = response.get("intent")
@@ -108,8 +105,7 @@ class FAQHandler:
                 logger.error(f"FAQ handler failed for user {message.from_user.id}: {e}")
                 bot.send_message(
                     message.from_user.id,
-                    "Sorry, I encountered an error. Please try again or contact support.",
-                    reply_markup=get_end_faq_keyboard()
+                    "Sorry, technical difficulty vachindi. Please try again or contact support."
                 )
 
         @bot.callback_query_handler(func=lambda call: call.data == "faq")
@@ -121,35 +117,25 @@ class FAQHandler:
                     pass
                 bot.send_message(
                     call.from_user.id,
-                    "❓ FAQ Assistant\n\nI'm here to help! Ask me about:\n\n📝 Registration\n💰 Deposits\n🏦 Withdrawals\n💳 Payments\n📚 Courses\n🔑 Access\n\nJust type your question and I'll assist you with information and video tutorials.",
+                    "❓ FAQ Assistant\n\nMee doubts edaina ikkada type cheyandi (Registration, Deposits, Withdrawals, Signals, etc.), nenu help chestha! 😊",
                     reply_markup=get_back_keyboard("back_to_main")
                 )
             except Exception as e:
                 logger.error(f"FAQ callback failed: {e}")
-                try:
-                    bot.answer_callback_query(call.id, "Error")
-                except Exception:
-                    pass
 
         @bot.callback_query_handler(func=lambda call: call.data == "end_faq")
         def end_faq_callback(call: CallbackQuery):
             try:
                 try:
-                    bot.answer_callback_query(call.id, "Ending FAQ session...")
+                    bot.answer_callback_query(call.id)
                 except Exception:
                     pass
-                welcome_text = "Thank you for being a member of our community! 🙏\n\nWe're here to help you anytime."
                 bot.send_message(
                     call.from_user.id,
-                    welcome_text,
-                    reply_markup=get_start_keyboard()
+                    "Thank you! Feel free to ask anytime if you need help. 🙏"
                 )
             except Exception as e:
                 logger.error(f"End FAQ callback failed: {e}")
-                try:
-                    bot.answer_callback_query(call.id, "Error")
-                except Exception:
-                    pass
 
 
 def register_faq_handlers(
