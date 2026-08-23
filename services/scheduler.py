@@ -1,5 +1,6 @@
 import logging
 import time
+import json
 import pytz
 from datetime import datetime, timedelta, date
 from typing import Dict, Any, List, Optional
@@ -12,7 +13,8 @@ from database import database
 from services.channel import ChannelService
 from services.onboarding import (
     STATE_AWAITING_POSITIVE_INTENT,
-    STATE_AWAITING_SCREENSHOT
+    STATE_AWAITING_SCREENSHOT,
+    STATE_AWAITING_ACCOUNT_ID
 )
 from services import promo
 from utils import get_current_datetime, get_current_timestamp
@@ -27,6 +29,25 @@ def _get_scheduler_tz():
         return pytz.timezone("Asia/Kolkata")
     except Exception:
         return pytz.UTC
+
+
+def _parse_iso_datetime(dt_val):
+    if not dt_val:
+        return None
+    if isinstance(dt_val, datetime):
+        if dt_val.tzinfo is None:
+            return dt_val.replace(tzinfo=pytz.UTC)
+        return dt_val
+    if isinstance(dt_val, str):
+        try:
+            clean_str = dt_val.replace('Z', '+00:00')
+            parsed = datetime.fromisoformat(clean_str)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=pytz.UTC)
+            return parsed
+        except Exception:
+            return None
+    return None
 
 
 class SchedulerService:
@@ -55,7 +76,9 @@ class SchedulerService:
         self.running = True
         self.schedule_promo_sequence_check()
         self.schedule_registration_reminder_check()
+        self.schedule_vip_resources_check()
         self.schedule_registration_nudge_check()
+        self.schedule_account_id_nudge_check()
         self.schedule_hot_lead_check()
         self.schedule_followup_check()
         self.schedule_scheduled_post_check()
@@ -71,7 +94,6 @@ class SchedulerService:
 
     # ------------------------------------------------------------------
     # 1. Capital No-Response Drip Sequence
-    # Delays: 120s (Testimonials) -> 120s (No fee) -> 10s (Benefits) -> 90s (Ask) -> 900s (15m Re-engage)
     # ------------------------------------------------------------------
     PROMO_STAGE_DELAYS = {
         None: 120,               # 2 min after capital response -> Testimonials
@@ -118,20 +140,24 @@ class SchedulerService:
                         continue
 
                     onboarding_data = user.get("onboarding_data") or {}
+                    if isinstance(onboarding_data, str):
+                        try:
+                            onboarding_data = json.loads(onboarding_data)
+                        except Exception:
+                            onboarding_data = {}
+
                     current_stage = onboarding_data.get("promo_stage")
                     stage_at = onboarding_data.get("promo_stage_at")
-                    reference_time = stage_at or user.get("last_activity")
+                    ref_dt = _parse_iso_datetime(stage_at or user.get("last_activity"))
 
-                    if not reference_time:
+                    if not ref_dt:
                         continue
-                    if isinstance(reference_time, str):
-                        reference_time = datetime.fromisoformat(reference_time.replace('Z', '+00:00'))
 
                     delay_seconds = self.PROMO_STAGE_DELAYS.get(current_stage)
                     if delay_seconds is None:
                         continue
 
-                    elapsed = (now - reference_time).total_seconds()
+                    elapsed = (now - ref_dt).total_seconds()
                     if elapsed < delay_seconds:
                         continue
 
@@ -187,17 +213,21 @@ class SchedulerService:
                         continue
 
                     onboarding_data = user.get("onboarding_data") or {}
+                    if isinstance(onboarding_data, str):
+                        try:
+                            onboarding_data = json.loads(onboarding_data)
+                        except Exception:
+                            onboarding_data = {}
+
                     if onboarding_data.get("registration_reminder_sent"):
                         continue
 
                     sent_at = onboarding_data.get("registration_steps_sent_at")
-                    if not sent_at:
+                    sent_dt = _parse_iso_datetime(sent_at)
+                    if not sent_dt:
                         continue
 
-                    if isinstance(sent_at, str):
-                        sent_at = datetime.fromisoformat(sent_at.replace('Z', '+00:00'))
-
-                    if (now - sent_at).total_seconds() >= 20:
+                    if (now - sent_dt).total_seconds() >= 20:
                         promo.send_20s_registration_reminder(self.bot, telegram_id)
                         self.onboarding_service.mark_registration_reminder_sent(telegram_id)
                         logger.info(f"Sent 20-second registration reminder to {telegram_id}")
@@ -207,7 +237,62 @@ class SchedulerService:
             logger.error(f"Failed in process_registration_reminders: {e}")
 
     # ------------------------------------------------------------------
-    # 3. Registration Screenshot Idle Nudge (15 minutes)
+    # 3. 2-Minute Post-Approval VIP Resources Delivery
+    # ------------------------------------------------------------------
+    def schedule_vip_resources_check(self):
+        try:
+            self.scheduler.add_job(
+                self.process_vip_resources_delivery,
+                IntervalTrigger(seconds=15, timezone=_get_scheduler_tz()),
+                id="vip_resources_check",
+                replace_existing=True
+            )
+            logger.info("VIP resources 2-minute post-approval check scheduled")
+        except Exception as e:
+            logger.error(f"Failed to schedule VIP resources check: {e}")
+
+    def process_vip_resources_delivery(self):
+        try:
+            approved_users = database.select("users", match_conditions={"verification_status": "approved"})
+            if not approved_users:
+                return
+
+            now = get_current_datetime()
+            for user in approved_users:
+                try:
+                    telegram_id = user.get("telegram_id")
+                    if not telegram_id or user.get("blocked"):
+                        continue
+
+                    onboarding_data = user.get("onboarding_data") or {}
+                    if isinstance(onboarding_data, str):
+                        try:
+                            onboarding_data = json.loads(onboarding_data)
+                        except Exception:
+                            onboarding_data = {}
+
+                    if onboarding_data.get("vip_resources_sent"):
+                        continue
+
+                    verified_raw = onboarding_data.get("vip_approved_at") or user.get("verified_at") or user.get("updated_at")
+                    verified_dt = _parse_iso_datetime(verified_raw)
+
+                    if not verified_dt:
+                        continue
+
+                    # 2 minutes = 120 seconds after approval
+                    if (now - verified_dt).total_seconds() >= 120:
+                        promo.send_vip_resources(self.bot, telegram_id)
+                        onboarding_data["vip_resources_sent"] = True
+                        database.update_user(telegram_id, {"onboarding_data": onboarding_data})
+                        logger.info(f"Delivered 2-minute post-approval VIP resources to {telegram_id}")
+                except Exception as e:
+                    logger.error(f"Error delivering VIP resources to {user.get('telegram_id')}: {e}")
+        except Exception as e:
+            logger.error(f"Failed in process_vip_resources_delivery: {e}")
+
+    # ------------------------------------------------------------------
+    # 4. Missing Screenshot Nudge (15 minutes)
     # ------------------------------------------------------------------
     def schedule_registration_nudge_check(self):
         try:
@@ -217,6 +302,7 @@ class SchedulerService:
                 id="registration_nudge_check",
                 replace_existing=True
             )
+            logger.info("Registration nudge check scheduled")
         except Exception as e:
             logger.error(f"Failed to schedule registration nudge check: {e}")
 
@@ -233,14 +319,11 @@ class SchedulerService:
                     if not telegram_id or user.get("blocked") or user.get("registration_nudge_sent"):
                         continue
 
-                    last_activity = user.get("last_activity")
-                    if not last_activity:
+                    act_dt = _parse_iso_datetime(user.get("last_activity"))
+                    if not act_dt:
                         continue
 
-                    if isinstance(last_activity, str):
-                        last_activity = datetime.fromisoformat(last_activity.replace('Z', '+00:00'))
-
-                    if (now - last_activity).total_seconds() / 60 >= 15:
+                    if (now - act_dt).total_seconds() / 60 >= 15:
                         from services.ai import ai_service
                         name = self.onboarding_service.get_display_name(telegram_id)
                         msg = ai_service.generate_registration_nudge(name)
@@ -258,7 +341,65 @@ class SchedulerService:
             logger.error(f"Failed in process_registration_nudges: {e}")
 
     # ------------------------------------------------------------------
-    # 4. Hot-Lead Followups
+    # 5. Missing 9-Digit Trading Account ID Nudge (15 minutes)
+    # ------------------------------------------------------------------
+    def schedule_account_id_nudge_check(self):
+        try:
+            self.scheduler.add_job(
+                self.process_account_id_nudges,
+                IntervalTrigger(minutes=2, timezone=_get_scheduler_tz()),
+                id="account_id_nudge_check",
+                replace_existing=True
+            )
+            logger.info("Account ID nudge check scheduled")
+        except Exception as e:
+            logger.error(f"Failed to schedule account ID nudge check: {e}")
+
+    def process_account_id_nudges(self):
+        if not self.onboarding_service:
+            return
+        try:
+            users = self.onboarding_service.get_users_awaiting_account_id()
+            now = get_current_datetime()
+
+            for user in users:
+                try:
+                    telegram_id = user.get("telegram_id")
+                    if not telegram_id or user.get("blocked"):
+                        continue
+
+                    onboarding_data = user.get("onboarding_data") or {}
+                    if isinstance(onboarding_data, str):
+                        try:
+                            onboarding_data = json.loads(onboarding_data)
+                        except Exception:
+                            onboarding_data = {}
+
+                    if onboarding_data.get("account_id_nudge_sent"):
+                        continue
+
+                    act_dt = _parse_iso_datetime(user.get("last_activity"))
+                    if not act_dt:
+                        continue
+
+                    if (now - act_dt).total_seconds() / 60 >= 15:
+                        from services.ai import ai_service
+                        name = self.onboarding_service.get_display_name(telegram_id)
+                        msg = ai_service.generate_account_id_nudge(name)
+                        try:
+                            self.bot.send_message(telegram_id, msg)
+                            onboarding_data["account_id_nudge_sent"] = True
+                            database.update_user(telegram_id, {"onboarding_data": onboarding_data})
+                            logger.info(f"Sent 15-minute Account ID nudge to {telegram_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to send account ID nudge to {telegram_id}: {e}")
+                except Exception as e:
+                    logger.error(f"Account ID nudge error for {user.get('telegram_id')}: {e}")
+        except Exception as e:
+            logger.error(f"Failed in process_account_id_nudges: {e}")
+
+    # ------------------------------------------------------------------
+    # 6. Hot-Lead Followups
     # ------------------------------------------------------------------
     def schedule_hot_lead_check(self):
         try:
@@ -284,17 +425,14 @@ class SchedulerService:
                     if not telegram_id or user.get("blocked"):
                         continue
 
-                    if user.get("onboarding_state") == STATE_AWAITING_POSITIVE_INTENT:
+                    if user.get("onboarding_state") in [STATE_AWAITING_POSITIVE_INTENT, STATE_AWAITING_SCREENSHOT, STATE_AWAITING_ACCOUNT_ID]:
                         continue
 
-                    last_activity = user.get("last_activity")
-                    if not last_activity:
+                    act_dt = _parse_iso_datetime(user.get("last_activity"))
+                    if not act_dt:
                         continue
 
-                    if isinstance(last_activity, str):
-                        last_activity = datetime.fromisoformat(last_activity.replace('Z', '+00:00'))
-
-                    idle_minutes = (now - last_activity).total_seconds() / 60
+                    idle_minutes = (now - act_dt).total_seconds() / 60
                     if idle_minutes < self.idle_minutes:
                         continue
 
@@ -328,20 +466,16 @@ class SchedulerService:
         if sent_count >= len(self.day1_delays):
             return
 
-        last_sent_at = user.get("hot_lead_day1_last_sent_at")
-        last_activity = user.get("last_activity")
-        if isinstance(last_activity, str):
-            last_activity = datetime.fromisoformat(last_activity.replace('Z', '+00:00'))
+        last_sent_dt = _parse_iso_datetime(user.get("hot_lead_day1_last_sent_at"))
+        last_act_dt = _parse_iso_datetime(user.get("last_activity"))
 
         if sent_count == 0:
-            if last_activity and (now - last_activity).total_seconds() / 60 >= self.day1_delays[0]:
+            if last_act_dt and (now - last_act_dt).total_seconds() / 60 >= self.day1_delays[0]:
                 self._send_hot_lead_day1_nudge(telegram_id, attempt=1)
         else:
-            if last_sent_at:
-                if isinstance(last_sent_at, str):
-                    last_sent_at = datetime.fromisoformat(last_sent_at.replace('Z', '+00:00'))
+            if last_sent_dt:
                 gap_minutes = self.day1_delays[sent_count] if sent_count < len(self.day1_delays) else 300
-                if (now - last_sent_at).total_seconds() / 60 >= gap_minutes:
+                if (now - last_sent_dt).total_seconds() / 60 >= gap_minutes:
                     self._send_hot_lead_day1_nudge(telegram_id, attempt=sent_count + 1)
 
     def _send_hot_lead_day1_nudge(self, telegram_id, attempt):
@@ -370,11 +504,9 @@ class SchedulerService:
         if sent_today >= self.day2_per_day:
             return
 
-        last_followup = user.get("last_followup_at") or user.get("hot_lead_day1_last_sent_at")
-        if last_followup:
-            if isinstance(last_followup, str):
-                last_followup = datetime.fromisoformat(last_followup.replace('Z', '+00:00'))
-            if (now - last_followup).total_seconds() / 60 < 240:
+        last_followup_dt = _parse_iso_datetime(user.get("last_followup_at") or user.get("hot_lead_day1_last_sent_at"))
+        if last_followup_dt:
+            if (now - last_followup_dt).total_seconds() / 60 < 240:
                 return
 
         self._send_day2_followup(telegram_id, attempt=sent_today + 1)
@@ -397,7 +529,7 @@ class SchedulerService:
             logger.error(f"Day-2 followup error for {telegram_id}: {e}")
 
     # ------------------------------------------------------------------
-    # 5. Generic Followups & Channel Posts
+    # 7. Generic Followups & Channel Posts
     # ------------------------------------------------------------------
     def schedule_followup_check(self):
         try:
