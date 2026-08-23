@@ -14,6 +14,7 @@ STATE_AWAITING_AGE_OCCUPATION = "awaiting_age_occupation"
 STATE_AWAITING_CAPITAL = "awaiting_capital"
 STATE_AWAITING_POSITIVE_INTENT = "awaiting_positive_intent"
 STATE_AWAITING_SCREENSHOT = "awaiting_screenshot"
+STATE_AWAITING_ACCOUNT_ID = "awaiting_account_id"
 STATE_PENDING_APPROVAL = "pending_approval"
 STATE_COMPLETED = "completed"
 
@@ -25,6 +26,7 @@ ACTIVE_STATES = {
     STATE_AWAITING_CAPITAL,
     STATE_AWAITING_POSITIVE_INTENT,
     STATE_AWAITING_SCREENSHOT,
+    STATE_AWAITING_ACCOUNT_ID,
 }
 
 POSITIVE_INTENT_PATTERNS = [
@@ -110,6 +112,9 @@ class OnboardingService:
     def is_awaiting_screenshot(self, telegram_id: int) -> bool:
         return self.get_state(telegram_id) == STATE_AWAITING_SCREENSHOT
 
+    def is_awaiting_account_id(self, telegram_id: int) -> bool:
+        return self.get_state(telegram_id) == STATE_AWAITING_ACCOUNT_ID
+
     def get_display_name(self, telegram_id: int) -> str:
         data = self.get_data(telegram_id)
         if data.get("name"):
@@ -141,12 +146,10 @@ class OnboardingService:
         return False
 
     def parse_capital_amount(self, text: str) -> Optional[int]:
-        """Extract numeric capital from user message (e.g. '5000', '5k', '10,000', '6000rs')."""
         if not text:
             return None
         clean = text.lower().replace(",", "").replace("$", "").replace("₹", "").replace("rs", "").strip()
 
-        # Check for 'k' notation e.g., '5k', '10.5k'
         k_match = re.search(r"(\d+(?:\.\d+)?)\s*k\b", clean)
         if k_match:
             try:
@@ -154,7 +157,6 @@ class OnboardingService:
             except Exception:
                 pass
 
-        # Look for numbers with at least 3 digits
         num_match = re.search(r"\b(\d{3,7})\b", clean)
         if num_match:
             try:
@@ -162,7 +164,6 @@ class OnboardingService:
             except Exception:
                 pass
 
-        # If user entered 1 or 2 digits with $
         num_short = re.search(r"\b(\d{1,2})\b", clean)
         if num_short and "$" in text:
             try:
@@ -248,6 +249,13 @@ class OnboardingService:
             return database.select("users", match_conditions={"onboarding_state": STATE_AWAITING_SCREENSHOT})
         except Exception as e:
             logger.error(f"Failed to get users awaiting screenshot: {e}")
+            return []
+
+    def get_users_awaiting_account_id(self):
+        try:
+            return database.select("users", match_conditions={"onboarding_state": STATE_AWAITING_ACCOUNT_ID})
+        except Exception as e:
+            logger.error(f"Failed to get users awaiting account ID: {e}")
             return []
 
     def get_users_awaiting_positive_intent(self):
