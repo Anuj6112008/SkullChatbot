@@ -1,4 +1,7 @@
 import os
+import re
+import json
+import time
 import logging
 from telebot import TeleBot
 from telebot.types import InputMediaPhoto, InputMediaVideo
@@ -7,17 +10,13 @@ from database import database
 
 logger = logging.getLogger(__name__)
 
-
 CAPITAL_RESP_LOW = "Eyy,☹️\nNe capital chala takkuva ga undi, deenitho start cheyyochu but chala Slow and Careful ga Trades teeskovali - atleast 6k tho Start cheyyandi"
 CAPITAL_RESP_MID = "Haa parledu😉, chinnaga start chesi, gradual ga daily profits book cheskovachu"
 CAPITAL_RESP_HIGH = "Nice😎, daily consistent ga profits kosam idi satipothadi"
 
-
 TESTIMONIAL_INTRO_TEXT = "Look at these Results ☝🏻\n\nThese are the results of our VIP students Using PMS Compounding Strategy for daily trading - Last week aee trading cheyyadam Nerchukunnaru"
 
-
 NO_FEE_TEXT = "Dont worry, joining 𝐅𝐞𝐞 em Ledu, but only serious Learners kae 𝐅𝐫𝐞𝐞 ga join ayye opportunity dorkuthundi."
-
 
 VIP_BENEFITS_TEXT = (
     "𝐇𝐞𝐫𝐞 𝐚𝐫𝐞 𝐭𝐡𝐞 𝐯𝐢𝐩 𝐛𝐞𝐧𝐞𝐟𝐢𝐭𝐬 👇\n"
@@ -39,16 +38,13 @@ VIP_BENEFITS_TEXT = (
     "Even though Meeku trading lo ZERO Knowlege unna kani VIP COMMUNITY lo A to Z nerchukovachu"
 )
 
-
 ASK_TO_JOIN_TEXT = "Want to join the 𝐕𝐈𝐏 𝐂𝐨𝐦𝐦𝐮𝐧𝐢𝐭𝐲 🔥?"
-
 
 REENGAGEMENT_TEXT = (
     "Hey, mee VIP access registration inka complete avvaledu. "
     "Mee registration complete chesi VIP group lo join avvadaniki interest unda? "
     "Emanna doubts unte adagandi 😊"
 )
-
 
 REGISTRATION_STEPS_CAPTION = (
     "Joining Link : {link}\n\n"
@@ -61,7 +57,6 @@ REGISTRATION_STEPS_CAPTION = (
     "receive all the exclusive VIP resources."
 )
 
-
 FINAL_NOTE = (
     "🔴 NOTE — Only after completing ALL steps correctly will you get VIP student access. "
     "𝘽𝙚𝙘𝙖𝙪𝙨𝙚 𝙤𝙣𝙡𝙮 𝙨𝙚𝙧𝙞𝙤𝙪𝙨 𝙩𝙧𝙖𝙙𝙚𝙧𝙨 𝙬𝙞𝙡𝙡 𝙗𝙚 𝙃𝙚𝙡𝙥𝙚𝙙 𝙉𝙤𝙩 𝙂𝙖𝙢𝙗𝙡𝙚𝙧𝙨"
@@ -70,6 +65,36 @@ FINAL_NOTE = (
 SCREENSHOT_REQUEST_NOTE = (
     "𝐌𝐞 𝟗 𝐃𝐢𝐠𝐢𝐭 𝐓𝐫𝐚𝐝𝐢𝐧𝐠 𝐀𝐜𝐜𝐨𝐮𝐧𝐭 𝐈𝐝 🪪 send chesthe ne, Verify avthundi."
 )
+
+
+def _send_typing(bot: TeleBot, chat_id: int, delay: float = 1.5):
+    try:
+        bot.send_chat_action(chat_id, "typing")
+        time.sleep(delay)
+    except Exception:
+        pass
+
+
+def _send_upload_action(bot: TeleBot, chat_id: int, action: str = "upload_photo", delay: float = 1.0):
+    try:
+        bot.send_chat_action(chat_id, action)
+        time.sleep(delay)
+    except Exception:
+        pass
+
+
+def _parse_telegram_post_link(url_str: str):
+    """Extract channel username / ID and message ID from t.me post link."""
+    if not url_str:
+        return None, None
+    clean = url_str.strip()
+    match = re.search(r"t\.me/([^/]+)/(\d+)", clean)
+    if match:
+        channel_ref = match.group(1)
+        msg_id = int(match.group(2))
+        from_chat = f"@{channel_ref}" if not channel_ref.startswith("-100") and not channel_ref.startswith("@") else channel_ref
+        return from_chat, msg_id
+    return None, None
 
 
 def get_capital_response(amount: int) -> str:
@@ -82,8 +107,32 @@ def get_capital_response(amount: int) -> str:
 
 
 def send_testimonials(bot: TeleBot, telegram_id: int):
-    
+    """Send testimonials album from dynamic Supabase links (or fallback to local disk)."""
     try:
+        _send_upload_action(bot, telegram_id, "upload_photo", 1.2)
+
+        # 1. Check dynamic testimonial media sources from Supabase
+        setting = database.get_setting("testimonial_media_sources")
+        dynamic_sources = []
+        if setting and setting.get("value"):
+            try:
+                dynamic_sources = json.loads(setting["value"])
+            except Exception:
+                dynamic_sources = [s.strip() for s in setting["value"].split(",") if s.strip()]
+
+        if dynamic_sources and len(dynamic_sources) > 0:
+            media_group = []
+            for i, src in enumerate(dynamic_sources[:8]):
+                caption = TESTIMONIAL_INTRO_TEXT if i == 0 else None
+                media_group.append(InputMediaPhoto(src, caption=caption))
+            try:
+                bot.send_media_group(telegram_id, media_group)
+                logger.info(f"Sent dynamic testimonials album to {telegram_id}")
+                return
+            except Exception as e:
+                logger.warning(f"Failed sending dynamic media group: {e}")
+
+        # 2. Fallback to cached file_ids
         cached = database.get_setting("cached_testimonial_file_ids")
         if cached and cached.get("value"):
             file_ids = [fid.strip() for fid in cached["value"].split(",") if fid.strip()]
@@ -96,8 +145,9 @@ def send_testimonials(bot: TeleBot, telegram_id: int):
                     bot.send_media_group(telegram_id, media_group)
                     return
                 except Exception as e:
-                    logger.warning(f"Failed to send cached media group: {e}")
+                    logger.warning(f"Failed sending cached media group: {e}")
 
+        # 3. Fallback to local testimonials folder
         tdir = config.get_testimonials_path()
         if not os.path.isdir(tdir):
             bot.send_message(telegram_id, TESTIMONIAL_INTRO_TEXT)
@@ -148,6 +198,7 @@ def send_testimonials(bot: TeleBot, telegram_id: int):
 
 def send_no_fee_message(bot: TeleBot, telegram_id: int):
     try:
+        _send_typing(bot, telegram_id, 1.5)
         bot.send_message(telegram_id, NO_FEE_TEXT)
     except Exception as e:
         logger.error(f"Failed to send no-fee message to {telegram_id}: {e}")
@@ -155,6 +206,7 @@ def send_no_fee_message(bot: TeleBot, telegram_id: int):
 
 def send_vip_benefits(bot: TeleBot, telegram_id: int):
     try:
+        _send_typing(bot, telegram_id, 1.5)
         bot.send_message(telegram_id, VIP_BENEFITS_TEXT)
     except Exception as e:
         logger.error(f"Failed to send VIP benefits to {telegram_id}: {e}")
@@ -162,6 +214,7 @@ def send_vip_benefits(bot: TeleBot, telegram_id: int):
 
 def send_ask_to_join(bot: TeleBot, telegram_id: int):
     try:
+        _send_typing(bot, telegram_id, 1.2)
         bot.send_message(telegram_id, ASK_TO_JOIN_TEXT)
     except Exception as e:
         logger.error(f"Failed to send ask-to-join message to {telegram_id}: {e}")
@@ -169,51 +222,95 @@ def send_ask_to_join(bot: TeleBot, telegram_id: int):
 
 def send_reengagement_message(bot: TeleBot, telegram_id: int):
     try:
+        _send_typing(bot, telegram_id, 1.5)
         bot.send_message(telegram_id, REENGAGEMENT_TEXT)
     except Exception as e:
         logger.error(f"Failed to send reengagement message to {telegram_id}: {e}")
 
 
 def send_registration_video(bot: TeleBot, telegram_id: int):
+    """Send tutorial video from Telegram channel post link, direct URL, cached file_id, or local disk."""
+    link = config.get_joining_link() or "(link not configured)"
+    caption = REGISTRATION_STEPS_CAPTION.format(link=link)
+
     try:
+        _send_upload_action(bot, telegram_id, "upload_video", 1.2)
+
+        # 1. Check if dynamic Telegram post link or URL is configured in Supabase
+        setting = database.get_setting("registration_video_source")
+        if setting and setting.get("value"):
+            video_src = setting["value"].strip()
+            from_chat, msg_id = _parse_telegram_post_link(video_src)
+
+            # 1a. If it is a Telegram channel post link -> Copy message with custom caption in 0.1s
+            if from_chat and msg_id:
+                try:
+                    bot.copy_message(
+                        chat_id=telegram_id,
+                        from_chat_id=from_chat,
+                        message_id=msg_id,
+                        caption=caption
+                    )
+                    logger.info(f"Copied tutorial video from channel {from_chat} msg #{msg_id} to {telegram_id}")
+                    return
+                except Exception as e:
+                    logger.warning(f"Failed to copy video from channel post: {e}")
+
+            # 1b. If it is a direct video URL or file_id
+            elif video_src.startswith("http") or len(video_src) > 20:
+                try:
+                    bot.send_video(
+                        telegram_id,
+                        video_src,
+                        caption=caption,
+                        supports_streaming=True
+                    )
+                    logger.info(f"Sent tutorial video from URL/file_id to {telegram_id}")
+                    return
+                except Exception as e:
+                    logger.warning(f"Failed to send video from URL: {e}")
+
+        # 2. Fallback to cached file_id
         cached = database.get_setting("cached_registration_video_file_id")
         if cached and cached.get("value"):
             try:
                 bot.send_video(
                     telegram_id,
                     cached["value"],
-                    caption=REGISTRATION_STEPS_CAPTION,
+                    caption=caption,
                     supports_streaming=True
                 )
                 return
             except Exception as e:
                 logger.warning(f"Cached video send failed: {e}")
 
+        # 3. Fallback to local video file
         video_path = config.get_registration_video_path()
         if video_path and os.path.exists(video_path):
             with open(video_path, "rb") as vf:
                 sent_msg = bot.send_video(
                     telegram_id,
                     vf,
-                    caption=REGISTRATION_STEPS_CAPTION,
+                    caption=caption,
                     supports_streaming=True,
                     timeout=120
                 )
                 if sent_msg and sent_msg.video:
                     database.set_setting("cached_registration_video_file_id", sent_msg.video.file_id)
         else:
-            bot.send_message(telegram_id, REGISTRATION_STEPS_CAPTION)
+            bot.send_message(telegram_id, caption)
 
     except Exception as e:
         logger.error(f"Failed to send registration video to {telegram_id}: {e}")
         try:
-            bot.send_message(telegram_id, REGISTRATION_STEPS_CAPTION)
+            bot.send_message(telegram_id, caption)
         except Exception:
             pass
 
 
 def send_registration_steps(bot: TeleBot, telegram_id: int):
     try:
+        _send_typing(bot, telegram_id, 1.5)
         bot.send_message(
             telegram_id,
             "Here is the Joining Process\n\n"
@@ -222,17 +319,17 @@ def send_registration_steps(bot: TeleBot, telegram_id: int):
     except Exception as e:
         logger.error(f"Failed to send joining-process intro to {telegram_id}: {e}")
 
-    link = config.get_joining_link() or "(link not configured)"
-
     send_registration_video(bot, telegram_id)
 
 
 def send_20s_registration_reminder(bot: TeleBot, telegram_id: int):
     try:
+        _send_typing(bot, telegram_id, 1.5)
         bot.send_message(telegram_id, FINAL_NOTE)
     except Exception as e:
         logger.error(f"Failed to send final note to {telegram_id}: {e}")
     try:
+        _send_typing(bot, telegram_id, 1.2)
         bot.send_message(telegram_id, SCREENSHOT_REQUEST_NOTE)
     except Exception as e:
         logger.error(f"Failed to send screenshot note to {telegram_id}: {e}")
@@ -241,6 +338,7 @@ def send_20s_registration_reminder(bot: TeleBot, telegram_id: int):
 def send_vip_resources(bot: TeleBot, telegram_id: int):
     try:
         msg = config.get_vip_resources_message()
+        _send_typing(bot, telegram_id, 1.5)
         bot.send_message(telegram_id, msg)
         logger.info(f"Sent 2-minute VIP resources message to {telegram_id}")
     except Exception as e:
