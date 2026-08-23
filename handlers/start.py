@@ -1,0 +1,146 @@
+import logging
+from telebot import TeleBot
+from telebot.types import Message, CallbackQuery
+from config import config
+from database import database
+from services.video import VideoService
+from services.verification import VerificationService
+from services.registration import RegistrationService
+from services.support import SupportService
+from services.onboarding import OnboardingService, STATE_AWAITING_EXPERIENCE, ACTIVE_STATES
+from keyboards import get_start_keyboard, get_back_keyboard, get_registration_cancel_keyboard
+from utils import get_current_timestamp
+
+logger = logging.getLogger(__name__)
+
+
+def register_start_handlers(
+    bot: TeleBot,
+    registration_service: RegistrationService = None,
+    support_service: SupportService = None,
+    onboarding_service: OnboardingService = None
+):
+    video_service = VideoService(bot)
+    verification_service = VerificationService(bot)
+    registration_service = registration_service or RegistrationService(bot)
+    support_service = support_service or SupportService(bot)
+    onboarding_service = onboarding_service or OnboardingService(bot)
+
+    @bot.message_handler(commands=['start'])
+    def start_command(message: Message):
+        try:
+            user = message.from_user
+            telegram_id = user.id
+            username = user.username
+            first_name = user.first_name
+            last_name = user.last_name
+
+            user_data = database.get_user(telegram_id)
+            if not user_data:
+                user_data = database.create_user({
+                    "telegram_id": telegram_id,
+                    "username": username,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "member_type": "normal",
+                    "joined_at": get_current_timestamp(),
+                    "last_activity": get_current_timestamp()
+                })
+            else:
+                database.update_user(telegram_id, {
+                    "username": username,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "last_activity": get_current_timestamp()
+                })
+
+            current_state = user_data.get("onboarding_state") if user_data else None
+
+            if user_data and user_data.get("verification_status") == "approved":
+                bot.send_message(
+                    telegram_id,
+                    "Welcome back! You are an active VIP member. Feel free to ask any questions or reach out to support.",
+                    reply_markup=get_start_keyboard()
+                )
+                return
+
+            if current_state in ACTIVE_STATES and current_state != STATE_AWAITING_EXPERIENCE:
+                bot.send_message(
+                    telegram_id,
+                    "Mee registration inka process lo undi. Let's continue!"
+                )
+                return
+
+            # Client's exact Telglish Intro
+            bot.send_message(telegram_id, "👋 Hello, Im Nisha From Skull Support Team")
+            bot.send_message(telegram_id, "Mi joining request indake 𝐀𝐜𝐜𝐞𝐩𝐭 𝐂𝐡𝐞𝐬𝐚")
+            bot.send_message(telegram_id, "Meeku Trading experience unda😊?")
+            onboarding_service.set_state(telegram_id, STATE_AWAITING_EXPERIENCE)
+
+        except Exception as e:
+            logger.error(f"Start command failed for user {message.from_user.id}: {e}")
+
+    @bot.callback_query_handler(func=lambda call: call.data == "start_registration")
+    def start_registration_callback(call: CallbackQuery):
+        try:
+            telegram_id = call.from_user.id
+            user_data = database.get_user(telegram_id)
+            if not user_data:
+                return
+            if user_data.get("verification_status") == "approved":
+                bot.send_message(telegram_id, "You are already registered and verified! ✅")
+                return
+            bot.send_message(
+                telegram_id,
+                "📝 Registration\n\nPlease enter your trading account ID:",
+                reply_markup=get_registration_cancel_keyboard()
+            )
+            registration_service.set_registration_state(telegram_id, "awaiting_account_id")
+        except Exception as e:
+            logger.error(f"Start registration callback failed: {e}")
+
+    @bot.callback_query_handler(func=lambda call: call.data == "faq")
+    def faq_callback(call: CallbackQuery):
+        try:
+            bot.send_message(
+                call.from_user.id,
+                "❓ FAQ\n\nAsk me any question about registration, deposits, withdrawals, courses, or access.",
+                reply_markup=get_back_keyboard("back_to_main")
+            )
+        except Exception as e:
+            logger.error(f"FAQ callback failed: {e}")
+
+    @bot.callback_query_handler(func=lambda call: call.data == "support")
+    def support_callback(call: CallbackQuery):
+        try:
+            telegram_id = call.from_user.id
+            support_service.set_awaiting_support(telegram_id)
+            bot.send_message(
+                telegram_id,
+                "🆘 Support\n\nPlease describe your issue in your next message and I'll create a support ticket.",
+                reply_markup=get_back_keyboard("back_to_main")
+            )
+        except Exception as e:
+            logger.error(f"Support callback failed: {e}")
+
+    @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
+    def back_to_main_callback(call: CallbackQuery):
+        try:
+            welcome_text = verification_service.get_welcome_text()
+            bot.edit_message_text(
+                f"{welcome_text}\n\nChoose an option:",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=get_start_keyboard()
+            )
+        except Exception as e:
+            logger.error(f"Back to main callback failed: {e}")
+
+    @bot.callback_query_handler(func=lambda call: call.data == "noop")
+    def noop_callback(call: CallbackQuery):
+        try:
+            bot.answer_callback_query(call.id)
+        except Exception:
+            pass
+
+    return registration_service, support_service
