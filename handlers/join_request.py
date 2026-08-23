@@ -1,4 +1,5 @@
 import logging
+import time
 from telebot import TeleBot
 from telebot.types import ChatJoinRequest, Message
 from config import config
@@ -9,6 +10,15 @@ from services.onboarding import OnboardingService, STATE_AWAITING_EXPERIENCE
 from utils import get_current_timestamp
 
 logger = logging.getLogger(__name__)
+
+
+def _send_typing(bot: TeleBot, chat_id: int, delay: float = 1.5):
+    """Show realistic 'typing...' indicator in chat header before sending message."""
+    try:
+        bot.send_chat_action(chat_id, "typing")
+        time.sleep(delay)
+    except Exception:
+        pass
 
 
 def register_join_request_handlers(bot: TeleBot, onboarding_service: OnboardingService = None):
@@ -54,15 +64,22 @@ def register_join_request_handlers(bot: TeleBot, onboarding_service: OnboardingS
 
             if result.get("success") and result.get("action") == "approved":
                 try:
-                    # Client's exact Telglish Intro
+                    # Client's exact Telglish Intro with realistic typing pauses
+                    _send_typing(bot, telegram_id, 1.5)
                     bot.send_message(telegram_id, "Hello, Im NIsha From Skull Support Team")
+
+                    _send_typing(bot, telegram_id, 1.5)
                     bot.send_message(telegram_id, "Indake mee Joining request Accept chesa")
+
+                    _send_typing(bot, telegram_id, 1.2)
                     bot.send_message(telegram_id, "Meeku Trading experience unda?")
+
                     onboarding_service.set_state(telegram_id, STATE_AWAITING_EXPERIENCE)
                 except Exception as e:
                     logger.error(f"Failed to send onboarding intro to user {telegram_id}: {e}")
             elif result.get("success") and result.get("action") == "pending":
                 try:
+                    _send_typing(bot, telegram_id, 1.0)
                     bot.send_message(
                         telegram_id,
                         "Welcome! Your join request has been received. Our team will review it shortly."
@@ -95,6 +112,7 @@ def register_join_request_handlers(bot: TeleBot, onboarding_service: OnboardingS
                 bot.approve_chat_join_request(int(config.FREE_CHANNEL_ID), user_id)
                 bot.reply_to(message, f"Join request approved for user {user_id}")
                 try:
+                    _send_typing(bot, user_id, 1.0)
                     bot.send_message(
                         user_id,
                         "Your join request has been approved! Welcome to the channel."
