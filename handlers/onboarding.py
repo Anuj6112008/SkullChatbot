@@ -115,9 +115,9 @@ class OnboardingHandler:
 
         _send_typing(self.bot, telegram_id, 1.5)
         if is_beginner:
-            self.bot.send_message(telegram_id, "Parledu, nen kooda 2 years back zero nunde start chesa 😊")
+            self.bot.send_message(telegram_id, "Parledu, nen kooda 2 years back Zero🤭 nunde start chesa")
         else:
-            self.bot.send_message(telegram_id, "oh NIce")
+            self.bot.send_message(telegram_id, "Oh Nice 👌🏼")
 
         _send_typing(self.bot, telegram_id, 1.2)
         self.bot.send_message(telegram_id, "Sorry, adagadam marchipoya - what's your Name?")
@@ -141,7 +141,7 @@ class OnboardingHandler:
         svc.save_answer(telegram_id, "name", name)
 
         _send_typing(self.bot, telegram_id, 1.5)
-        self.bot.send_message(telegram_id, f"Nice to meet you, {name}!")
+        self.bot.send_message(telegram_id, f"Nice to meet you, {name}🤝!")
 
         _send_typing(self.bot, telegram_id, 1.5)
         self.bot.send_message(telegram_id, f"{name}, Mi age and aee profession lo unnaru?")
