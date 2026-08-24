@@ -66,13 +66,13 @@ def register_join_request_handlers(bot: TeleBot, onboarding_service: OnboardingS
                 try:
                     # Client's exact Telglish Intro with realistic typing pauses
                     _send_typing(bot, telegram_id, 1.5)
-                    bot.send_message(telegram_id, "Hello, Im NIsha From Skull Support Team")
+                    bot.send_message(telegram_id, "👋 Hello, Im Nisha From Skull Support Team")
 
                     _send_typing(bot, telegram_id, 1.5)
-                    bot.send_message(telegram_id, "Indake mee Joining request Accept chesa")
+                    bot.send_message(telegram_id, "Mi joining request indake 𝐀𝐜𝐜𝐞𝐩𝐭 𝐂𝐡𝐞𝐬𝐚")
 
                     _send_typing(bot, telegram_id, 1.2)
-                    bot.send_message(telegram_id, "Meeku Trading experience unda?")
+                    bot.send_message(telegram_id, "Meeku Trading experience unda😊?")
 
                     onboarding_service.set_state(telegram_id, STATE_AWAITING_EXPERIENCE)
                 except Exception as e:
