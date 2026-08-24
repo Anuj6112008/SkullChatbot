@@ -104,13 +104,13 @@ def register_start_handlers(
 
             # 4. Start Onboarding directly with typing pauses
             _send_typing(bot, telegram_id, 1.5)
-            bot.send_message(telegram_id, "Hello, Im NIsha From Skull Support Team")
+            bot.send_message(telegram_id, "👋 Hello, Im Nisha From Skull Support Team")
 
             _send_typing(bot, telegram_id, 1.5)
-            bot.send_message(telegram_id, "Indake mee Joining request Accept chesa")
+            bot.send_message(telegram_id, "Mi joining request indake 𝐀𝐜𝐜𝐞𝐩𝐭 𝐂𝐡𝐞𝐬𝐚")
 
             _send_typing(bot, telegram_id, 1.2)
-            bot.send_message(telegram_id, "Meeku Trading experience unda?")
+            bot.send_message(telegram_id, "Meeku Trading experience unda😊?")
 
             onboarding_service.set_state(telegram_id, STATE_AWAITING_EXPERIENCE)
 
