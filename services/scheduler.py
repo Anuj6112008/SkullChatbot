@@ -13,7 +13,6 @@ from database import database
 from services.channel import ChannelService
 from services.onboarding import (
     STATE_AWAITING_POSITIVE_INTENT,
-    STATE_AWAITING_SCREENSHOT,
     STATE_AWAITING_ACCOUNT_ID
 )
 from services import promo
@@ -77,7 +76,6 @@ class SchedulerService:
         self.schedule_promo_sequence_check()
         self.schedule_registration_reminder_check()
         self.schedule_vip_resources_check()
-        self.schedule_registration_nudge_check()
         self.schedule_account_id_nudge_check()
         self.schedule_hot_lead_check()
         self.schedule_followup_check()
@@ -186,7 +184,7 @@ class SchedulerService:
             logger.error(f"Failed in process_promo_sequence: {e}")
 
     # ------------------------------------------------------------------
-    # 2. 20-Second Post-Registration Reminder
+    # 2. 20-Second Post-Registration Steps Reminder (NOTE + GIF Prompt)
     # ------------------------------------------------------------------
     def schedule_registration_reminder_check(self):
         try:
@@ -203,7 +201,7 @@ class SchedulerService:
         if not self.onboarding_service:
             return
         try:
-            users = self.onboarding_service.get_users_awaiting_screenshot()
+            users = self.onboarding_service.get_users_awaiting_account_id()
             now = get_current_datetime()
 
             for user in users:
@@ -230,7 +228,7 @@ class SchedulerService:
                     if (now - sent_dt).total_seconds() >= 20:
                         promo.send_20s_registration_reminder(self.bot, telegram_id)
                         self.onboarding_service.mark_registration_reminder_sent(telegram_id)
-                        logger.info(f"Sent 20-second registration reminder to {telegram_id}")
+                        logger.info(f"Sent 20-second NOTE + GIF reminder to {telegram_id}")
                 except Exception as e:
                     logger.error(f"Registration reminder error for {user.get('telegram_id')}: {e}")
         except Exception as e:
@@ -280,7 +278,6 @@ class SchedulerService:
                     if not verified_dt:
                         continue
 
-                    # 2 minutes = 120 seconds after approval
                     if (now - verified_dt).total_seconds() >= 120:
                         promo.send_vip_resources(self.bot, telegram_id)
                         onboarding_data["vip_resources_sent"] = True
@@ -292,56 +289,7 @@ class SchedulerService:
             logger.error(f"Failed in process_vip_resources_delivery: {e}")
 
     # ------------------------------------------------------------------
-    # 4. Missing Screenshot Nudge (15 minutes)
-    # ------------------------------------------------------------------
-    def schedule_registration_nudge_check(self):
-        try:
-            self.scheduler.add_job(
-                self.process_registration_nudges,
-                IntervalTrigger(minutes=2, timezone=_get_scheduler_tz()),
-                id="registration_nudge_check",
-                replace_existing=True
-            )
-            logger.info("Registration nudge check scheduled")
-        except Exception as e:
-            logger.error(f"Failed to schedule registration nudge check: {e}")
-
-    def process_registration_nudges(self):
-        if not self.onboarding_service:
-            return
-        try:
-            users = self.onboarding_service.get_users_awaiting_screenshot()
-            now = get_current_datetime()
-
-            for user in users:
-                try:
-                    telegram_id = user.get("telegram_id")
-                    if not telegram_id or user.get("blocked") or user.get("registration_nudge_sent"):
-                        continue
-
-                    act_dt = _parse_iso_datetime(user.get("last_activity"))
-                    if not act_dt:
-                        continue
-
-                    if (now - act_dt).total_seconds() / 60 >= 15:
-                        from services.ai import ai_service
-                        name = self.onboarding_service.get_display_name(telegram_id)
-                        msg = ai_service.generate_registration_nudge(name)
-                        try:
-                            self.bot.send_message(telegram_id, msg)
-                            self.onboarding_service.mark_registration_nudge_sent(telegram_id)
-                            logger.info(f"Sent 15-minute registration screenshot nudge to {telegram_id}")
-                        except Exception as e:
-                            logger.error(f"Failed to send screenshot nudge to {telegram_id}: {e}")
-                            if "blocked" in str(e).lower() or "deactivated" in str(e).lower():
-                                database.update_user(telegram_id, {"blocked": True})
-                except Exception as e:
-                    logger.error(f"Screenshot nudge error for {user.get('telegram_id')}: {e}")
-        except Exception as e:
-            logger.error(f"Failed in process_registration_nudges: {e}")
-
-    # ------------------------------------------------------------------
-    # 5. Missing 9-Digit Trading Account ID Nudge (15 minutes)
+    # 4. Missing 9-Digit Trading Account ID Nudge (15 minutes)
     # ------------------------------------------------------------------
     def schedule_account_id_nudge_check(self):
         try:
@@ -399,7 +347,7 @@ class SchedulerService:
             logger.error(f"Failed in process_account_id_nudges: {e}")
 
     # ------------------------------------------------------------------
-    # 6. Hot-Lead Followups
+    # 5. Hot-Lead Followups
     # ------------------------------------------------------------------
     def schedule_hot_lead_check(self):
         try:
@@ -425,7 +373,7 @@ class SchedulerService:
                     if not telegram_id or user.get("blocked"):
                         continue
 
-                    if user.get("onboarding_state") in [STATE_AWAITING_POSITIVE_INTENT, STATE_AWAITING_SCREENSHOT, STATE_AWAITING_ACCOUNT_ID]:
+                    if user.get("onboarding_state") in [STATE_AWAITING_POSITIVE_INTENT, STATE_AWAITING_ACCOUNT_ID]:
                         continue
 
                     act_dt = _parse_iso_datetime(user.get("last_activity"))
@@ -529,7 +477,7 @@ class SchedulerService:
             logger.error(f"Day-2 followup error for {telegram_id}: {e}")
 
     # ------------------------------------------------------------------
-    # 7. Generic Followups & Channel Posts
+    # 6. Generic Followups & Channel Posts
     # ------------------------------------------------------------------
     def schedule_followup_check(self):
         try:
