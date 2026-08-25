@@ -63,7 +63,7 @@ FINAL_NOTE = (
 )
 
 ACCOUNT_ID_PROMPT_CAPTION = (
-    "𝐌𝐞 𝟗 𝐃𝐢𝐠𝐢𝐭 𝐓𝐫𝐚𝐝𝐢𝐧𝐠 𝐀𝐜𝐜𝐨𝐮𝐧𝐭 𝐈𝐝 🪪 send chesthe ne, Verify avthundi."
+    "👆 𝐌𝐞 𝟗 𝐃𝐢𝐠𝐢𝐭 𝐓𝐫𝐚𝐝𝐢𝐧𝐠 𝐀𝐜𝐜𝐨𝐮𝐧𝐭 𝐈𝐝 🪪 send chesthe ne, Verify avthundi."
 )
 
 REJECTION_MESSAGE_TEMPLATE = (
