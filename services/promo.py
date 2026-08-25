@@ -91,12 +91,14 @@ def _send_upload_action(bot: TeleBot, chat_id: int, action: str = "upload_photo"
 
 
 def _parse_telegram_post_link(url_str: str):
-    """Parse both Public (t.me/channel/12) and Private (t.me/c/12345/12) Telegram post links."""
+    """Safely extract channel reference and message ID from any t.me link format."""
     if not url_str:
         return None, None
-    clean = url_str.strip()
 
-    # 1. Private Channel Link: t.me/c/1234567890/45
+    clean = str(url_str).strip()
+    clean = clean.split("?")[0].rstrip("/")
+
+    # 1. Private Channel: t.me/c/1234567890/45
     private_match = re.search(r"t\.me/c/(\d+)/(\d+)", clean)
     if private_match:
         raw_id = private_match.group(1)
@@ -104,7 +106,7 @@ def _parse_telegram_post_link(url_str: str):
         from_chat = int(f"-100{raw_id}") if not raw_id.startswith("-100") else int(raw_id)
         return from_chat, msg_id
 
-    # 2. Public Channel Link: t.me/channel_username/45
+    # 2. Public Channel: t.me/channel_username/45
     public_match = re.search(r"t\.me/([a-zA-Z0-9_]+)/(\d+)", clean)
     if public_match:
         channel_username = public_match.group(1)
@@ -130,7 +132,6 @@ def send_testimonials(bot: TeleBot, telegram_id: int):
     try:
         _send_upload_action(bot, telegram_id, "upload_photo", 1.2)
 
-        # 1. Check dynamic testimonial media sources from Supabase
         setting = database.get_setting("testimonial_media_sources")
         dynamic_sources = []
         if setting and setting.get("value"):
@@ -151,7 +152,6 @@ def send_testimonials(bot: TeleBot, telegram_id: int):
             except Exception as e:
                 logger.warning(f"Failed sending dynamic media group: {e}")
 
-        # 2. Fallback to cached file_ids
         cached = database.get_setting("cached_testimonial_file_ids")
         if cached and cached.get("value"):
             file_ids = [fid.strip() for fid in cached["value"].split(",") if fid.strip()]
@@ -166,7 +166,6 @@ def send_testimonials(bot: TeleBot, telegram_id: int):
                 except Exception as e:
                     logger.warning(f"Failed sending cached media group: {e}")
 
-        # 3. Fallback to local testimonials folder
         tdir = config.get_testimonials_path()
         if not os.path.isdir(tdir):
             bot.send_message(telegram_id, TESTIMONIAL_INTRO_TEXT)
@@ -255,13 +254,12 @@ def send_registration_video(bot: TeleBot, telegram_id: int):
     try:
         _send_upload_action(bot, telegram_id, "upload_video", 1.2)
 
-        # 1. Check if dynamic Telegram post link or URL is configured in Supabase
+        # 1. Check dynamic video source from Supabase
         setting = database.get_setting("registration_video_source")
         if setting and setting.get("value"):
             video_src = setting["value"].strip()
             from_chat, msg_id = _parse_telegram_post_link(video_src)
 
-            # 1a. If it is a Telegram channel post link -> Copy message directly with custom caption
             if from_chat and msg_id:
                 try:
                     bot.copy_message(
@@ -275,7 +273,6 @@ def send_registration_video(bot: TeleBot, telegram_id: int):
                 except Exception as e:
                     logger.error(f"Failed to copy video from channel post ({from_chat}, #{msg_id}): {e}")
 
-            # 1b. If it is a direct video URL or file_id
             elif video_src.startswith("http") or len(video_src) > 20:
                 try:
                     bot.send_video(
@@ -326,72 +323,80 @@ def send_registration_steps(bot: TeleBot, telegram_id: int):
 
 
 def send_20s_registration_reminder(bot: TeleBot, telegram_id: int):
-    """Send NOTE message followed by dynamic GIF with caption asking for 9-digit Trading ID."""
+    """Send NOTE message, clean GIF separately, and then ID prompt text."""
     try:
         # Message 1: NOTE
         _send_typing(bot, telegram_id, 1.5)
         bot.send_message(telegram_id, FINAL_NOTE)
 
-        # Message 2: Dynamic GIF with Caption
-        _send_typing(bot, telegram_id, 1.2)
+        # Message 2: GIF (Clean, without caption)
+        _send_upload_action(bot, telegram_id, "upload_video", 1.0)
 
-        # 1. Check if dynamic GIF post link or URL is configured in Supabase
         setting = database.get_setting("account_id_gif_source")
+        sent_gif = False
+
         if setting and setting.get("value"):
             gif_src = setting["value"].strip()
             from_chat, msg_id = _parse_telegram_post_link(gif_src)
 
-            # 1a. If it is a Telegram channel post link -> Copy GIF with caption
+            # 1a. Channel post link -> copy message directly (clean, without caption)
             if from_chat and msg_id:
                 try:
                     bot.copy_message(
                         chat_id=telegram_id,
                         from_chat_id=from_chat,
-                        message_id=msg_id,
-                        caption=ACCOUNT_ID_PROMPT_CAPTION
+                        message_id=msg_id
                     )
-                    logger.info(f"Copied guidance GIF from {from_chat} msg #{msg_id} to {telegram_id}")
-                    return
+                    sent_gif = True
+                    logger.info(f"Copied clean GIF from {from_chat} msg #{msg_id} to {telegram_id}")
                 except Exception as e:
-                    logger.error(f"Failed to copy GIF from channel post ({from_chat}, #{msg_id}): {e}")
+                    logger.warning(f"Failed copy_message for clean GIF: {e}, trying forward")
+                    try:
+                        bot.forward_message(chat_id=telegram_id, from_chat_id=from_chat, message_id=msg_id)
+                        sent_gif = True
+                    except Exception as fwd_err:
+                        logger.error(f"Failed forward_message for clean GIF: {fwd_err}")
 
-            # 1b. If it is a direct GIF URL or file_id
+            # 1b. Direct URL or File ID
             elif gif_src.startswith("http") or len(gif_src) > 20:
                 try:
-                    bot.send_animation(
-                        telegram_id,
-                        gif_src,
-                        caption=ACCOUNT_ID_PROMPT_CAPTION
-                    )
-                    logger.info(f"Sent guidance GIF from URL/file_id to {telegram_id}")
-                    return
-                except Exception as e:
-                    logger.error(f"Failed to send GIF animation from URL: {e}")
-
-        # 2. Fallback to local media/ files
-        gif_candidates = [
-            os.path.join(config.MEDIA_DIR, "account_id.gif"),
-            os.path.join(config.MEDIA_DIR, "id.gif"),
-            os.path.join(config.MEDIA_DIR, "trading_id.gif"),
-            os.path.join(config.MEDIA_DIR, "account_id.mp4"),
-        ]
-
-        sent_gif = False
-        for gpath in gif_candidates:
-            if os.path.exists(gpath):
-                try:
-                    with open(gpath, "rb") as gf:
-                        bot.send_animation(telegram_id, gf, caption=ACCOUNT_ID_PROMPT_CAPTION)
+                    bot.send_animation(telegram_id, gif_src)
                     sent_gif = True
-                    break
-                except Exception:
-                    pass
+                except Exception as e:
+                    try:
+                        bot.send_video(telegram_id, gif_src, supports_streaming=True)
+                        sent_gif = True
+                    except Exception:
+                        pass
 
+        # Fallback to local files if channel post not set / failed
         if not sent_gif:
-            bot.send_message(telegram_id, ACCOUNT_ID_PROMPT_CAPTION)
+            gif_candidates = [
+                os.path.join(config.MEDIA_DIR, "account_id.gif"),
+                os.path.join(config.MEDIA_DIR, "id.gif"),
+                os.path.join(config.MEDIA_DIR, "trading_id.gif"),
+                os.path.join(config.MEDIA_DIR, "account_id.mp4"),
+            ]
+            for gpath in gif_candidates:
+                if os.path.exists(gpath):
+                    try:
+                        with open(gpath, "rb") as gf:
+                            bot.send_animation(telegram_id, gf)
+                        sent_gif = True
+                        break
+                    except Exception:
+                        pass
+
+        # Message 3: Separate Text Message for the 9-Digit ID Prompt
+        _send_typing(bot, telegram_id, 1.2)
+        bot.send_message(telegram_id, ACCOUNT_ID_PROMPT_CAPTION)
 
     except Exception as e:
         logger.error(f"Failed to send 20s reminder to {telegram_id}: {e}")
+        try:
+            bot.send_message(telegram_id, ACCOUNT_ID_PROMPT_CAPTION)
+        except Exception:
+            pass
 
 
 def send_vip_resources(bot: TeleBot, telegram_id: int):
