@@ -3,6 +3,8 @@ import re
 import time
 import html
 import threading
+import pytz
+from datetime import datetime
 from telebot import TeleBot
 from telebot.types import Message, CallbackQuery
 from config import config
@@ -15,7 +17,6 @@ from services.onboarding import (
     STATE_AWAITING_AGE_OCCUPATION,
     STATE_AWAITING_CAPITAL,
     STATE_AWAITING_POSITIVE_INTENT,
-    STATE_AWAITING_SCREENSHOT,
     STATE_AWAITING_ACCOUNT_ID,
     STATE_PENDING_APPROVAL,
     STATE_COMPLETED
@@ -77,12 +78,7 @@ class OnboardingHandler:
         def handle_positive_intent(message: Message):
             self._handle_positive_intent_step(message)
 
-        # 6. Screenshot Step -> Ask 9-digit Trading ID
-        @bot.message_handler(content_types=['photo'], func=lambda m: svc.is_awaiting_screenshot(m.from_user.id))
-        def handle_screenshot(message: Message):
-            self._handle_screenshot(message)
-
-        # 7. 9-Digit Trading Account ID Step -> Submit Verification
+        # 6. 9-Digit Trading Account ID Step -> Strict 9-digit validation & Submit Verification
         @bot.message_handler(func=lambda m: bool(m.text) and not m.text.startswith('/') and svc.is_awaiting_account_id(m.from_user.id))
         def handle_account_id(message: Message):
             self._handle_account_id_step(message)
@@ -124,7 +120,7 @@ class OnboardingHandler:
         svc.set_state(telegram_id, STATE_AWAITING_NAME)
 
     # ------------------------------------------------------------------
-    # Step 2: Name -> EXACTLY 2 messages with typing
+    # Step 2: Name -> EXACTLY 2 messages
     # ------------------------------------------------------------------
     def _handle_name_step(self, message: Message):
         telegram_id = message.from_user.id
@@ -141,7 +137,7 @@ class OnboardingHandler:
         svc.save_answer(telegram_id, "name", name)
 
         _send_typing(self.bot, telegram_id, 1.5)
-        self.bot.send_message(telegram_id, f"Nice to meet you, {name}🤝!")
+        self.bot.send_message(telegram_id, f"Nice to meet you, {name}!🤝")
 
         _send_typing(self.bot, telegram_id, 1.5)
         self.bot.send_message(telegram_id, f"{name}, Mi age and aee profession lo unnaru?")
@@ -175,7 +171,7 @@ class OnboardingHandler:
                 "profession": str(final_prof)
             })
             _send_typing(self.bot, telegram_id, 1.5)
-            self.bot.send_message(telegram_id, "GOOD !  As of now me daggara trading capital entha undi in INR?")
+            self.bot.send_message(telegram_id, "GOOD !  As of now me daggara Trading Capital entha undi in INR?")
             svc.set_state(telegram_id, STATE_AWAITING_CAPITAL)
             return
 
@@ -286,49 +282,11 @@ class OnboardingHandler:
             _send_typing(self.bot, telegram_id, 1.5)
             promo.send_registration_steps(self.bot, telegram_id)
             svc.mark_registration_steps_sent(telegram_id)
-            svc.set_state(telegram_id, STATE_AWAITING_SCREENSHOT)
+            svc.set_state(telegram_id, STATE_AWAITING_ACCOUNT_ID)
             return
 
     # ------------------------------------------------------------------
-    # Step 6: Screenshot Received -> Ask for 9-Digit Account ID
-    # ------------------------------------------------------------------
-    def _handle_screenshot(self, message: Message):
-        telegram_id = message.from_user.id
-        svc = self.onboarding_service
-        try:
-            user = database.get_user(telegram_id)
-            if not user:
-                return
-
-            svc.clear_hot_lead(telegram_id)
-            svc.clear_promo_stage(telegram_id)
-
-            photo = message.photo[-1]
-            file_id = photo.file_id
-
-            svc.save_answer(telegram_id, "screenshot_file_id", file_id)
-            svc.set_state(telegram_id, STATE_AWAITING_ACCOUNT_ID)
-
-            _send_typing(self.bot, telegram_id, 1.5)
-            self.bot.send_message(
-                telegram_id,
-                "Mee registration screenshot successfully receive ayindi, thank you! 👍"
-            )
-            _send_typing(self.bot, telegram_id, 1.5)
-            self.bot.send_message(
-                telegram_id,
-                "Ippudu mee screenshot lo unna 9 Digit Trading Account ID ni ikkada message ga send cheyandi (e.g. 123554267)."
-            )
-            logger.info(f"Received screenshot from {telegram_id}, now awaiting 9-digit trading ID")
-        except Exception as e:
-            logger.error(f"Failed to handle screenshot: {e}")
-            try:
-                self.bot.send_message(telegram_id, "Sorry, something went wrong. Please send the screenshot again.")
-            except Exception:
-                pass
-
-    # ------------------------------------------------------------------
-    # Step 7: 9-Digit Account ID Received -> Submit Complete Verification
+    # Step 6: 9-Digit Trading Account ID -> Strict 9-digit Validation & Submit
     # ------------------------------------------------------------------
     def _handle_account_id_step(self, message: Message):
         telegram_id = message.from_user.id
@@ -343,17 +301,29 @@ class OnboardingHandler:
 
         svc.clear_hot_lead(telegram_id)
 
-        account_id_match = re.search(r"\b(\d{6,14})\b", text)
-        account_id = account_id_match.group(1) if account_id_match else text.strip()
+        # Extract only digits from user's message
+        digits_only = re.sub(r"\D", "", text)
 
-        if not account_id:
+        # 1. Less than 9 digits
+        if len(digits_only) < 9:
             _send_typing(self.bot, telegram_id, 1.2)
             self.bot.send_message(
                 telegram_id,
-                "Please mee 9 digit trading account ID ni ikkada text ga send cheyandi:"
+                "Trading Account ID lo exactly 9 digits undali. Meeru ichina ID lo 9 digits kante takkuva unayi. Please correct 9-digit Trading ID ni send cheyandi."
             )
             return
 
+        # 2. More than 9 digits
+        if len(digits_only) > 9:
+            _send_typing(self.bot, telegram_id, 1.2)
+            self.bot.send_message(
+                telegram_id,
+                "Trading Account ID lo exactly 9 digits undali. Meeru ichina ID lo 9 digits kante ekkuva unayi. Please correct 9-digit Trading ID ni send cheyandi."
+            )
+            return
+
+        # 3. Exactly 9 digits
+        account_id = digits_only
         svc.save_answer(telegram_id, "trading_account_id", account_id)
 
         data = svc.get_data(telegram_id)
@@ -382,29 +352,40 @@ class OnboardingHandler:
 
             svc.set_state(telegram_id, STATE_PENDING_APPROVAL)
 
-            _send_typing(self.bot, telegram_id, 1.5)
-            self.bot.send_message(
-                telegram_id,
-                f"Thank you! Mee screenshot and Trading Account ID ({account_id}) verification kosam team ki forward chesam. "
-                "Approve avvagane meeku ikkade update vasthundi. 🎉"
-            )
+            # TIME-BASED MESSAGE (11:00 PM to 7:00 AM IST check)
+            now_ist = datetime.now(pytz.timezone("Asia/Kolkata"))
+            current_hour = now_ist.hour  # 0 to 23
 
-            # Send review card ONLY to Updates Channel with click-to-copy HTML code format
+            if current_hour >= 23 or current_hour < 7:
+                # Nighttime message (11 PM to 7 AM)
+                confirmation_msg = (
+                    "Hey, sorry for the inconvenience. Our Team is not available from 11 Pm to 7 Am.\n\n"
+                    "Your VIP joining request will be verified once the team is available"
+                )
+            else:
+                # Daytime message (7 AM to 11 PM)
+                confirmation_msg = (
+                    "Pls wait, you will be added in the VIP once the verification is done by our backend team"
+                )
+
+            _send_typing(self.bot, telegram_id, 1.5)
+            self.bot.send_message(telegram_id, confirmation_msg)
+
+            # Send clean review card ONLY to Updates Channel with click-to-copy HTML code format
             self._notify_updates_channel_only(registration_id, registration_data, user)
-            logger.info(f"Verification submitted for {telegram_id} with Account ID: {account_id}")
+            logger.info(f"Verification submitted for {telegram_id} with 9-digit ID: {account_id}")
 
         except Exception as e:
             logger.error(f"Failed to submit account ID registration for {telegram_id}: {e}")
 
     def _notify_updates_channel_only(self, registration_id, registration_data, user):
-        """Send verification card ONLY to Updates Channel with <code>account_id</code> for 1-tap copy."""
+        """Send verification card ONLY to Updates Channel with click-to-copy <code>account_id</code>."""
         if not config.UPDATES_CHANNEL_ID:
             logger.warning("UPDATES_CHANNEL_ID is not configured, cannot post review card.")
             return
 
         try:
             chat_id = int(config.UPDATES_CHANNEL_ID)
-            file_id = registration_data.get("screenshot_file_id")
 
             caption = "🆕 <b>New Registration Request</b>\n\n"
             caption += f"👤 <b>Name:</b> {html.escape(str(registration_data.get('full_name', 'N/A')))}\n"
@@ -418,29 +399,21 @@ class OnboardingHandler:
             caption += f"💳 <b>Trading Account ID:</b> <code>{html.escape(str(registration_data.get('trading_account_id', 'N/A')))}</code>\n"
             caption += f"\n📝 <b>Registration ID:</b> #{registration_id}"
 
-            if file_id:
-                self.bot.send_photo(
-                    chat_id,
-                    file_id,
-                    caption=caption,
-                    parse_mode="HTML",
-                    reply_markup=get_screenshot_review_keyboard(registration_id)
-                )
-            else:
-                self.bot.send_message(
-                    chat_id,
-                    caption,
-                    parse_mode="HTML",
-                    reply_markup=get_screenshot_review_keyboard(registration_id)
-                )
+            self.bot.send_message(
+                chat_id,
+                caption,
+                parse_mode="HTML",
+                reply_markup=get_screenshot_review_keyboard(registration_id)
+            )
             logger.info(f"Sent review card for #{registration_id} exclusively to Updates Channel {chat_id}")
         except Exception as e:
             logger.error(f"Failed to post to Updates Channel: {e}")
 
     # ------------------------------------------------------------------
-    # Admin Accept / Reject Decision with 1-Time VIP Link & 2-Minute Resources
+    # Admin Accept / Reject Decision with 1-Time VIP Link & Retry on Decline
     # ------------------------------------------------------------------
     def _handle_admin_decision(self, call: CallbackQuery, accept: bool):
+        svc = self.onboarding_service
         try:
             if not config.is_admin(call.from_user.id):
                 try:
@@ -553,18 +526,11 @@ class OnboardingHandler:
                 threading.Thread(target=_send_delayed_vip_resources, args=(telegram_id,), daemon=True).start()
 
                 try:
-                    if call.message.caption:
-                        self.bot.edit_message_caption(
-                            caption=f"{call.message.caption}\n\n✅ ACCEPTED",
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id
-                        )
-                    else:
-                        self.bot.edit_message_text(
-                            f"{call.message.text}\n\n✅ ACCEPTED",
-                            call.message.chat.id,
-                            call.message.message_id
-                        )
+                    self.bot.edit_message_text(
+                        f"{call.message.text}\n\n✅ ACCEPTED",
+                        call.message.chat.id,
+                        call.message.message_id
+                    )
                 except Exception:
                     pass
             else:
@@ -579,20 +545,22 @@ class OnboardingHandler:
                     "verified_at": get_current_timestamp(),
                     "rejection_reason": "Registration declined by admin"
                 })
+
                 database.update_user(telegram_id, {
                     "member_type": "normal",
                     "verification_status": "rejected",
                     "registration_status": "rejected",
-                    "onboarding_state": STATE_COMPLETED,
+                    "onboarding_state": STATE_AWAITING_ACCOUNT_ID,
                     "hot_lead_active": False
                 })
 
-                link = config.get_joining_link() or ""
+                link = config.get_joining_link() or "https://in.tradingview.com/symbols/NSE-BANKNIFTY/"
                 reject_msg = (
-                    "❌ Mee registration request reject ayindi because meeru maa VIP link dwara join avvaledu."
+                    "❌ Mi Registration Decline ayyindi \n\n"
+                    "Kindly create account through our Student link to get VIP access\n\n"
+                    "Kindly use this link👇👇\n"
+                    f"{link}"
                 )
-                if link:
-                    reject_msg += f"\n\nEe platform link use chesi register avvandi:\n{link}"
 
                 try:
                     _send_typing(self.bot, telegram_id, 1.2)
@@ -601,18 +569,11 @@ class OnboardingHandler:
                     logger.error(f"Failed to notify user {telegram_id} of rejection: {e}")
 
                 try:
-                    if call.message.caption:
-                        self.bot.edit_message_caption(
-                            caption=f"{call.message.caption}\n\n❌ REJECTED",
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id
-                        )
-                    else:
-                        self.bot.edit_message_text(
-                            f"{call.message.text}\n\n❌ REJECTED",
-                            call.message.chat.id,
-                            call.message.message_id
-                        )
+                    self.bot.edit_message_text(
+                        f"{call.message.text}\n\n❌ REJECTED",
+                        call.message.chat.id,
+                        call.message.message_id
+                    )
                 except Exception:
                     pass
         except Exception as e:
