@@ -7,13 +7,12 @@ from utils import get_current_timestamp, get_current_datetime
 
 logger = logging.getLogger(__name__)
 
-# Complete Onboarding States
+# Complete Onboarding States (No Screenshot)
 STATE_AWAITING_EXPERIENCE = "awaiting_experience"
 STATE_AWAITING_NAME = "awaiting_name"
 STATE_AWAITING_AGE_OCCUPATION = "awaiting_age_occupation"
 STATE_AWAITING_CAPITAL = "awaiting_capital"
 STATE_AWAITING_POSITIVE_INTENT = "awaiting_positive_intent"
-STATE_AWAITING_SCREENSHOT = "awaiting_screenshot"
 STATE_AWAITING_ACCOUNT_ID = "awaiting_account_id"
 STATE_PENDING_APPROVAL = "pending_approval"
 STATE_COMPLETED = "completed"
@@ -25,7 +24,6 @@ ACTIVE_STATES = {
     STATE_AWAITING_AGE_OCCUPATION,
     STATE_AWAITING_CAPITAL,
     STATE_AWAITING_POSITIVE_INTENT,
-    STATE_AWAITING_SCREENSHOT,
     STATE_AWAITING_ACCOUNT_ID,
 }
 
@@ -108,9 +106,6 @@ class OnboardingService:
     def is_in_onboarding(self, telegram_id: int) -> bool:
         state = self.get_state(telegram_id)
         return state in ACTIVE_STATES
-
-    def is_awaiting_screenshot(self, telegram_id: int) -> bool:
-        return self.get_state(telegram_id) == STATE_AWAITING_SCREENSHOT
 
     def is_awaiting_account_id(self, telegram_id: int) -> bool:
         return self.get_state(telegram_id) == STATE_AWAITING_ACCOUNT_ID
@@ -243,13 +238,6 @@ class OnboardingService:
             })
         except Exception as e:
             logger.error(f"Failed to mark registration nudge for {telegram_id}: {e}")
-
-    def get_users_awaiting_screenshot(self):
-        try:
-            return database.select("users", match_conditions={"onboarding_state": STATE_AWAITING_SCREENSHOT})
-        except Exception as e:
-            logger.error(f"Failed to get users awaiting screenshot: {e}")
-            return []
 
     def get_users_awaiting_account_id(self):
         try:
