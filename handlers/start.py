@@ -87,9 +87,9 @@ def register_start_handlers(
                 )
                 return
 
-            # 3. Check if user has joined or requested the Free Channel
-            free_channel_id = int(config.FREE_CHANNEL_ID)
-            is_member = channel_service.is_user_in_channel(telegram_id, free_channel_id)
+            # 3. Check if user has joined or requested the dynamic Free Channel
+            target_free_channel_id = int(config.get_free_channel_id()) if config.get_free_channel_id() else int(config.FREE_CHANNEL_ID)
+            is_member = channel_service.is_user_in_channel(telegram_id, target_free_channel_id)
 
             if not is_member:
                 free_link = config.get_free_channel_link() or "https://t.me/+3zlZ8oTobb5lODc9"
@@ -104,13 +104,13 @@ def register_start_handlers(
 
             # 4. Start Onboarding directly with typing pauses
             _send_typing(bot, telegram_id, 1.5)
-            bot.send_message(telegram_id, "👋 Hello, Im Nisha From Skull Support Team")
+            bot.send_message(telegram_id, "Hello, Im NIsha From Skull Support Team")
 
             _send_typing(bot, telegram_id, 1.5)
-            bot.send_message(telegram_id, "Mi joining request indake 𝐀𝐜𝐜𝐞𝐩𝐭 𝐂𝐡𝐞𝐬𝐚")
+            bot.send_message(telegram_id, "Indake mee Joining request Accept chesa")
 
             _send_typing(bot, telegram_id, 1.2)
-            bot.send_message(telegram_id, "Meeku Trading experience unda😊?")
+            bot.send_message(telegram_id, "Meeku Trading experience unda?")
 
             onboarding_service.set_state(telegram_id, STATE_AWAITING_EXPERIENCE)
 
