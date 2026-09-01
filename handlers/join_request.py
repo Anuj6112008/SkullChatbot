@@ -36,10 +36,12 @@ def register_join_request_handlers(bot: TeleBot, onboarding_service: OnboardingS
             last_name = user.last_name
             chat_id = join_request.chat.id
 
-            if str(chat_id) != config.FREE_CHANNEL_ID:
+            # Dynamic Free Channel ID check
+            target_free_channel = str(config.get_free_channel_id())
+            if str(chat_id) != target_free_channel:
                 return
 
-            logger.info(f"Join request received from user {telegram_id} for chat {chat_id}")
+            logger.info(f"Join request received from user {telegram_id} for target channel {chat_id}")
 
             user_data = database.get_user(telegram_id)
             if not user_data:
@@ -66,13 +68,13 @@ def register_join_request_handlers(bot: TeleBot, onboarding_service: OnboardingS
                 try:
                     # Client's exact Telglish Intro with realistic typing pauses
                     _send_typing(bot, telegram_id, 1.5)
-                    bot.send_message(telegram_id, "👋 Hello, Im Nisha From Skull Support Team")
+                    bot.send_message(telegram_id, "Hello, Im NIsha From Skull Support Team")
 
                     _send_typing(bot, telegram_id, 1.5)
-                    bot.send_message(telegram_id, "Mi joining request indake 𝐀𝐜𝐜𝐞𝐩𝐭 𝐂𝐡𝐞𝐬𝐚")
+                    bot.send_message(telegram_id, "Indake mee Joining request Accept chesa")
 
                     _send_typing(bot, telegram_id, 1.2)
-                    bot.send_message(telegram_id, "Meeku Trading experience unda😊?")
+                    bot.send_message(telegram_id, "Meeku Trading experience unda?")
 
                     onboarding_service.set_state(telegram_id, STATE_AWAITING_EXPERIENCE)
                 except Exception as e:
@@ -109,7 +111,8 @@ def register_join_request_handlers(bot: TeleBot, onboarding_service: OnboardingS
                 bot.reply_to(message, "User not found")
                 return
             try:
-                bot.approve_chat_join_request(int(config.FREE_CHANNEL_ID), user_id)
+                target_channel_id = int(config.get_free_channel_id())
+                bot.approve_chat_join_request(target_channel_id, user_id)
                 bot.reply_to(message, f"Join request approved for user {user_id}")
                 try:
                     _send_typing(bot, user_id, 1.0)
@@ -145,7 +148,8 @@ def register_join_request_handlers(bot: TeleBot, onboarding_service: OnboardingS
                 bot.reply_to(message, "User not found")
                 return
             try:
-                bot.decline_chat_join_request(int(config.FREE_CHANNEL_ID), user_id)
+                target_channel_id = int(config.get_free_channel_id())
+                bot.decline_chat_join_request(target_channel_id, user_id)
                 bot.reply_to(message, f"Join request declined for user {user_id}")
             except Exception as e:
                 bot.reply_to(message, f"Failed to decline join request: {e}")
