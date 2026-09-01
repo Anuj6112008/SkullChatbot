@@ -63,31 +63,27 @@ class Config:
     MAX_VIDEO_SIZE_MB = int(os.getenv("MAX_VIDEO_SIZE_MB", "50"))
 
     # ---- Client-specific flow config ----
-    # Registration / joining link shown to users (Student Joining Link)
     STUDENT_JOINING_LINK = os.getenv("STUDENT_JOINING_LINK", "")
-    # Free channel link sent on profit questions
     FREE_CHANNEL_LINK = os.getenv("FREE_CHANNEL_LINK", "")
 
     # Capital thresholds (INR)
     CAPITAL_LOW_THRESHOLD = int(os.getenv("CAPITAL_LOW_THRESHOLD", "4999"))
     CAPITAL_MID_THRESHOLD = int(os.getenv("CAPITAL_MID_THRESHOLD", "9999"))
 
-    # Hot-lead followup timings (in minutes) for the FIRST DAY only
+    # Hot-lead followup timings
     HOT_LEAD_DAY1_DELAYS = [
         int(x) for x in os.getenv(
             "HOT_LEAD_DAY1_DELAYS", "15,30,60,300"
         ).split(",") if x.strip()
     ]
-    # Max followups on day 2 and beyond (per day)
     HOT_LEAD_DAY2_PER_DAY = int(os.getenv("HOT_LEAD_DAY2_PER_DAY", "2"))
-    # Idle minutes before a user is considered "left mid-conversation"
     HOT_LEAD_IDLE_MINUTES = int(os.getenv("HOT_LEAD_IDLE_MINUTES", "10"))
 
     # Testimonials media
     TESTIMONIALS_DIR = os.getenv("TESTIMONIALS_DIR", "media/testimonials")
     TESTIMONIALS_COUNT = int(os.getenv("TESTIMONIALS_COUNT", "8"))
 
-    # Registration tutorial video (filename inside MEDIA_DIR)
+    # Registration tutorial video
     REGISTRATION_VIDEO_FILE = os.getenv("REGISTRATION_VIDEO_FILE", "registration.mp4")
 
     def __init__(self):
@@ -140,7 +136,6 @@ class Config:
             except OSError:
                 sys.exit(f"Failed to create prompts directory: {self.PROMPTS_DIR}")
 
-        # testimonials directory
         if not os.path.exists(self.TESTIMONIALS_DIR):
             try:
                 os.makedirs(self.TESTIMONIALS_DIR, exist_ok=True)
@@ -188,7 +183,7 @@ class Config:
         return telegram_id in self.get_admin_ids()
 
     def get_channel_ids(self):
-        channels = [int(self.FREE_CHANNEL_ID)]
+        channels = [int(self.get_free_channel_id())]
         if self.PAID_CHANNEL_ID:
             channels.append(int(self.PAID_CHANNEL_ID))
         if self.UPDATES_CHANNEL_ID:
@@ -202,6 +197,19 @@ class Config:
         if filename is None:
             filename = self.SYSTEM_PROMPT_FILE
         return os.path.join(self.PROMPTS_DIR, filename)
+
+    def get_free_channel_id(self):
+        """Return the target Free Channel ID (checks Supabase dynamic setting first, fallback to .env)."""
+        try:
+            from database import database
+            setting = database.get_setting("target_free_channel_id")
+            if setting and setting.get("value"):
+                val = str(setting["value"]).strip()
+                if val:
+                    return val
+        except Exception:
+            pass
+        return str(self.FREE_CHANNEL_ID or "")
 
     def get_joining_link(self):
         """Return the user-facing Student Joining Link (checks Supabase dynamic setting first, fallback to .env)."""
@@ -237,6 +245,16 @@ class Config:
         )
 
     def get_free_channel_link(self):
+        """Return the user-facing Free Channel Link (checks Supabase dynamic setting first, fallback to .env)."""
+        try:
+            from database import database
+            setting = database.get_setting("free_channel_link")
+            if setting and setting.get("value"):
+                val = str(setting["value"]).strip()
+                if val:
+                    return val
+        except Exception:
+            pass
         return self.FREE_CHANNEL_LINK or ""
 
     def get_testimonials_path(self):
