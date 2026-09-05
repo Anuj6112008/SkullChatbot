@@ -36,10 +36,10 @@ class AIService:
     def get_default_system_prompt(self):
         return (
             "You are Nisha, a warm, friendly female support assistant from Team Skull based in Hyderabad. "
-            "Reply in natural, conversational Telglish (Telugu written in English letters) or simple, friendly English. "
-            "Keep replies short (1-3 lines). Be helpful, polite, and confident. Never use broken Telugu scripts. "
+            "Always reply in clean, natural, friendly Indian English. Keep replies short (1-3 lines). "
+            "Do NOT use Telugu, Telglish, or regional language words — write in simple, polite English only. "
             "Never address users as bro, brother, sister, anna, akka. "
-            "If you don't know the exact answer, guide them to the support team."
+            "Be helpful, polite, and confident. If you don't know the exact answer, guide them to the support team."
         )
 
     def load_intent_mapping(self):
@@ -60,15 +60,15 @@ class AIService:
             return "GENERAL"
         message_lower = message.lower()
         keyword_map = {
-            "REGISTRATION": ["register", "registration", "sign up", "signup", "join", "account create", "ela join avvali"],
-            "DEPOSIT": ["deposit", "add money", "fund", "payment", "pay", "charge", "recharge", "dabbu ela veyyali"],
-            "WITHDRAWAL": ["withdraw", "withdrawal", "cash out", "payout", "nikalna", "dabbu ela teeskovali"],
+            "REGISTRATION": ["register", "registration", "sign up", "signup", "join", "account create", "how to join"],
+            "DEPOSIT": ["deposit", "add money", "fund", "payment", "pay", "charge", "recharge", "how to deposit"],
+            "WITHDRAWAL": ["withdraw", "withdrawal", "cash out", "payout", "nikalna", "how to withdraw"],
             "PAYMENT": ["payment", "pay", "card", "upi", "bank", "transfer", "paytm", "google pay", "phone pe"],
-            "COURSE": ["course", "class", "lesson", "module", "learn", "study", "nerchukovadaniki"],
+            "COURSE": ["course", "class", "lesson", "module", "learn", "study"],
             "ACCESS": ["access", "login", "password", "otp", "verify", "vip access"],
             "LOGIN": ["login", "sign in", "password", "username", "credential"],
             "ACCOUNT": ["account", "profile", "setting", "update", "change"],
-            "SUPPORT": ["help", "support", "problem", "issue", "not working", "error", "wrong", "complaint", "urgent", "sahayam"]
+            "SUPPORT": ["help", "support", "problem", "issue", "not working", "error", "wrong", "complaint", "urgent"]
         }
         for intent, keywords in keyword_map.items():
             for keyword in keywords:
@@ -94,7 +94,7 @@ class AIService:
 
             if intent == "SUPPORT" or (intent == "GENERAL" and self.is_support_question(message)):
                 result["support_needed"] = True
-                result["response"] = "Mee query support team ki forward chesthunna. Thvaralo maa team meeku help chestharu 😊"
+                result["response"] = "I'm forwarding your query to our support team. They will get back to you shortly 😊"
                 return result
 
             system_prompt = self.system_prompt
@@ -109,8 +109,8 @@ class AIService:
             full_prompt = (
                 f"{user_info}\n"
                 f"User message: {message}\n\n"
-                "Provide a helpful, natural, and concise response in conversational Telglish (Telugu in English letters) or simple English. "
-                "Keep it 1 to 2 lines only. Be warm, confident, and polite. Never use broken Telugu scripts."
+                "Provide a helpful, natural, and concise response in clean, friendly Indian English (no Telugu or regional words). "
+                "Keep it 1 to 2 lines only. Be warm, confident, and polite."
             )
             payload = {
                 "model": self.model,
@@ -128,13 +128,13 @@ class AIService:
             response_text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             result["response"] = sanitize_text(response_text)
             if not result["response"]:
-                result["response"] = "Mee doubt ardhamaindi. More details kosam support team ni contact avvandi."
+                result["response"] = "I understand your query. Please contact our support team for further assistance."
             return result
         except Exception as e:
             logger.error(f"AI response generation failed: {e}")
             return {
                 "intent": "GENERAL",
-                "response": "Technical issue valla reply late avthondi. Emanna urgent unte support team ni reach avvandi.",
+                "response": "I'm currently experiencing technical difficulties. Please try again later or contact support.",
                 "video": None,
                 "caption": None,
                 "support_needed": True,
@@ -142,7 +142,7 @@ class AIService:
             }
 
     def is_support_question(self, message: str) -> bool:
-        support_keywords = ["help", "support", "problem", "issue", "not working", "error", "wrong", "complaint", "urgent", "sahayam"]
+        support_keywords = ["help", "support", "problem", "issue", "not working", "error", "wrong", "complaint", "urgent"]
         message_lower = message.lower()
         for keyword in support_keywords:
             if keyword in message_lower:
@@ -152,13 +152,13 @@ class AIService:
     def generate_caption(self, intent: str, video_path: str) -> str:
         try:
             prompt = (
-                f"Generate a short, helpful caption in Telglish or English for a video about {intent}. "
+                f"Generate a short, helpful caption in clean, friendly English for a video about {intent}. "
                 "Keep it under 60 words."
             )
             payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "You are a caption generator. Keep it short and professional."},
+                    {"role": "system", "content": "You are a caption generator. Keep it short, clean, and professional in English."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.6,
@@ -182,12 +182,12 @@ class AIService:
             prompt = (
                 f"A user requested support with message: {message}\n"
                 f"User: {user_data.get('first_name', 'User')}, Ticket #{ticket_id}\n\n"
-                "Provide a helpful support acknowledgment in natural Telglish / English. Keep it 1-2 lines."
+                "Provide a helpful support acknowledgment in clean, friendly English. Keep it 1-2 lines."
             )
             payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "You are a support agent from Team Skull. Reply in natural Telglish / English."},
+                    {"role": "system", "content": "You are a support agent from Team Skull. Reply in clean, friendly English."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.6,
@@ -198,10 +198,10 @@ class AIService:
             response.raise_for_status()
             data = response.json()
             response_text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            return sanitize_text(response_text) or "Mee support ticket create ayindi. Maa team thvaralo review chesi reply istharu."
+            return sanitize_text(response_text) or "Your support ticket has been created. Our team will review it and get back to you shortly."
         except Exception as e:
             logger.error(f"Support response generation failed: {e}")
-            return "Mee support ticket create ayindi. Maa team thvaralo review chesi reply istharu."
+            return "Your support ticket has been created. Our team will review it and get back to you shortly."
 
     def detect_question(self, message: str, current_question: str, name: str = "") -> bool:
         try:
@@ -233,11 +233,11 @@ class AIService:
 
     def generate_onboarding_reply(self, step: str, user_message: str, name: str = "") -> str:
         try:
-            prompt = f"User said: {user_message} at step {step}. Acknowledge warmly in 1 short line in natural Telglish."
+            prompt = f"User said: {user_message} at step {step}. Acknowledge warmly in 1 short line in clean, friendly English."
             payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "You are Nisha. Reply in 1 short line in Telglish."},
+                    {"role": "system", "content": "You are Nisha. Reply in 1 short line in clean, friendly English."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.6,
@@ -293,20 +293,20 @@ class AIService:
             return {"age": None, "profession": None}
 
     def generate_registration_nudge(self, name: str = "") -> str:
-        """Persuasive / Engaging Telglish AI Nudge for missing screenshot."""
+        """Persuasive English AI Nudge for missing registration."""
         try:
             name_note = f"User name is {name}." if name else ""
             prompt = (
                 f"{name_note}\n"
-                "The user was sent the registration joining link and steps but hasn't sent the registration screenshot yet. "
-                "Write a warm, engaging, and persuasive nudge in conversational Telglish (Telugu in English letters). "
-                "Gently remind them that once they register and send the screenshot, their VIP access and exclusive signals will be activated. "
-                "Keep it 1 to 2 short lines only. No spammy tone. Warm and friendly."
+                "The user was sent the registration joining link and steps but hasn't completed their registration yet. "
+                "Write a warm, engaging, and persuasive reminder in clean, friendly Indian English (strictly NO Telugu words). "
+                "Gently remind them that once they register and submit their 9-digit Trading ID, their VIP access and exclusive signals will be activated. "
+                "Keep it 1 to 2 short lines only. Friendly and motivating tone."
             )
             payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "You are Nisha, a friendly assistant from Team Skull. Write short, natural Telglish messages."},
+                    {"role": "system", "content": "You are Nisha, a friendly support assistant from Team Skull. Write short, motivating messages in clean Indian English only."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.7,
@@ -318,31 +318,31 @@ class AIService:
             data = response.json()
             text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             return sanitize_text(text) or (
-                "Hey, mee registration screenshot inka raledu. "
-                "Account create chesi screenshot send chesthe turant mee VIP access activate chestham 😊"
+                "Hey! Looks like you haven't completed your registration yet. "
+                "Complete your registration and send your 9-digit Trading ID so we can activate your VIP access right away 😊"
             )
         except Exception as e:
             logger.error(f"Registration nudge generation failed: {e}")
             return (
-                "Hey, mee registration screenshot inka raledu. "
-                "Account create chesi screenshot send chesthe turant mee VIP access activate chestham 😊"
+                "Hey! Looks like you haven't completed your registration yet. "
+                "Complete your registration and send your 9-digit Trading ID so we can activate your VIP access right away 😊"
             )
 
     def generate_account_id_nudge(self, name: str = "") -> str:
-        """Persuasive Telglish AI Nudge for missing 9-digit trading ID."""
+        """Persuasive English AI Nudge for missing 9-digit trading ID."""
         try:
             name_note = f"User name is {name}." if name else ""
             prompt = (
                 f"{name_note}\n"
-                "The user sent their registration screenshot, but they forgot to send their 9-digit Trading Account ID in text. "
-                "Write a short, friendly reminder in conversational Telglish (Telugu in English letters). "
-                "Explain that their screenshot is received, but our team needs their 9-digit ID to verify and approve their VIP joining link. "
+                "The user registered but hasn't sent their 9-digit Trading Account ID yet. "
+                "Write a short, polite reminder in clean, friendly Indian English (strictly NO Telugu words). "
+                "Explain that our team is waiting for their 9-digit Trading Account ID to verify and approve their VIP access. "
                 "Keep it 1 to 2 short lines only."
             )
             payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, natural Telglish messages."},
+                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, polite reminder messages in clean English only."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.6,
@@ -354,29 +354,35 @@ class AIService:
             data = response.json()
             text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             return sanitize_text(text) or (
-                "Mee screenshot receive ayindi! Just mee 9-digit Trading Account ID text ga send cheyandi, "
-                "mana team verify chesi VIP link approve chestharu 👍"
+                "Hey! Please send your 9-digit Trading Account ID here so our backend team can verify and approve your VIP access 👍"
             )
         except Exception as e:
             logger.error(f"Account ID nudge generation failed: {e}")
             return (
-                "Mee screenshot receive ayindi! Just mee 9-digit Trading Account ID text ga send cheyandi, "
-                "mana team verify chesi VIP link approve chestharu 👍"
+                "Hey! Please send your 9-digit Trading Account ID here so our backend team can verify and approve your VIP access 👍"
             )
 
     def generate_idle_followup(self, name: str = "", attempt: int = 1) -> str:
+        """Day-1 idle nudge in clean, friendly English."""
         try:
             name_note = f"User name is {name}." if name else ""
+            attempt_tone = {
+                1: "First nudge — very gentle and casual, checking if they are still connected.",
+                2: "Second nudge — warm and friendly, reminding them to complete the chat.",
+                3: "Third nudge — remind them about the VIP trading opportunity in a friendly way.",
+                4: "Final nudge for today — gentle reminder to finish their registration whenever free.",
+            }.get(attempt, "Gentle check-in.")
+
             prompt = (
                 f"{name_note}\n"
-                f"The user stopped replying mid-conversation (Follow-up attempt #{attempt}). "
-                "Write a short, casual, friendly check-in message in conversational Telglish (Telugu in English letters). "
-                "One or two lines only."
+                f"The user stopped replying mid-conversation (Follow-up #{attempt}). {attempt_tone}\n"
+                "Write a short, friendly check-in message in clean, natural Indian English (strictly NO Telugu words). "
+                "One or two lines only. Casual, polite, and warm tone."
             )
             payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, friendly Telglish messages."},
+                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, warm, casual messages in clean English only."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.7,
@@ -387,24 +393,25 @@ class AIService:
             response.raise_for_status()
             data = response.json()
             text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            return sanitize_text(text) or "Hey, are we still connected? Waiting for your reply 🙂"
+            return sanitize_text(text) or "Hey, are you still there? Waiting for your reply 🙂"
         except Exception as e:
             logger.error(f"Idle followup generation failed: {e}")
-            return "Hey, are we still connected? Waiting for your reply 🙂"
+            return "Hey, are you still there? Waiting for your reply 🙂"
 
     def generate_day2_followup(self, name: str = "", attempt: int = 1) -> str:
+        """Day-2+ follow-up in clean, friendly English."""
         try:
             name_note = f"User name is {name}." if name else ""
             prompt = (
                 f"{name_note}\n"
-                "This user left our chat halfway yesterday and hasn't finished registration. "
-                "Write a short, friendly reminder in conversational Telglish (Telugu in English letters) "
-                "encouraging them to complete registration whenever they are free. One or two lines only."
+                "This user left our registration chat halfway through yesterday and hasn't finished it yet. "
+                "Write a short, polite reminder in clean, friendly Indian English (strictly NO Telugu words) "
+                "encouraging them to complete their registration whenever they are free. One or two lines only."
             )
             payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, friendly Telglish messages."},
+                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, friendly reminders in clean English only."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.7,
@@ -415,10 +422,10 @@ class AIService:
             response.raise_for_status()
             data = response.json()
             text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            return sanitize_text(text) or "Hey, mee registration inka complete avvaledu — free unnapudu complete cheyandi, let's start! 😊"
+            return sanitize_text(text) or "Hey, looks like you left our chat halfway — whenever you're free, let's complete your registration 😊"
         except Exception as e:
             logger.error(f"Day2 followup generation failed: {e}")
-            return "Hey, mee registration inka complete avvaledu — free unnapudu complete cheyandi, let's start! 😊"
+            return "Hey, looks like you left our chat halfway — whenever you're free, let's complete your registration 😊"
 
 
 ai_service = AIService()
