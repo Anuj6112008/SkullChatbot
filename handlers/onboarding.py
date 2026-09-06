@@ -10,6 +10,7 @@ from telebot.types import Message, CallbackQuery
 from config import config
 from database import database
 from services.channel import ChannelService
+from services.ai import ai_service
 from services.onboarding import (
     OnboardingService,
     STATE_AWAITING_EXPERIENCE,
@@ -78,7 +79,7 @@ class OnboardingHandler:
         def handle_positive_intent(message: Message):
             self._handle_positive_intent_step(message)
 
-        # 6. 9-Digit Trading Account ID Step -> Strict 9-digit validation & Submit Verification
+        # 6. 9-Digit Trading Account ID Step
         @bot.message_handler(func=lambda m: bool(m.text) and not m.text.startswith('/') and svc.is_awaiting_account_id(m.from_user.id))
         def handle_account_id(message: Message):
             self._handle_account_id_step(message)
@@ -103,11 +104,23 @@ class OnboardingHandler:
 
         svc = self.onboarding_service
         svc.clear_hot_lead(telegram_id)
-        svc.save_answer(telegram_id, "experience", text)
 
         clean = text.lower()
         no_exp_words = ["no", "never", "zero", "beginner", "fresher", "new", "start", "starting", "le", "ledu", "nill", "nil", "none", "not"]
+        has_exp_words = ["yes", "ha", "haa", "yeah", "undhi", "undi", "years", "months", "experience", "trading", "crypto", "forex"]
+
         is_beginner = any(re.search(rf"\b{k}\b", clean) for k in no_exp_words)
+        is_experienced = any(re.search(rf"\b{k}\b", clean) for k in has_exp_words)
+
+        if not is_beginner and not is_experienced and len(text.split()) > 3:
+            # User is asking something off-topic -> Bridge back
+            user = database.get_user(telegram_id) or {}
+            bridge_reply = ai_service.generate_conversational_bridge(text, "", STATE_AWAITING_EXPERIENCE, user)
+            _send_typing(self.bot, telegram_id, 1.5)
+            self.bot.send_message(telegram_id, bridge_reply)
+            return
+
+        svc.save_answer(telegram_id, "experience", text)
 
         _send_typing(self.bot, telegram_id, 1.5)
         if is_beginner:
@@ -128,12 +141,21 @@ class OnboardingHandler:
         if not raw_name:
             return
 
+        svc = self.onboarding_service
+        svc.clear_hot_lead(telegram_id)
+
+        # Check if user asked an off-topic question instead of giving name
+        if "?" in raw_name or any(w in raw_name.lower() for w in ["who are you", "why", "insta", "number", "date", "enti"]):
+            user = database.get_user(telegram_id) or {}
+            bridge_reply = ai_service.generate_conversational_bridge(raw_name, "", STATE_AWAITING_NAME, user)
+            _send_typing(self.bot, telegram_id, 1.5)
+            self.bot.send_message(telegram_id, bridge_reply)
+            return
+
         name = re.sub(r"^(?:my\s+name\s+is|i\s+am|i'm|im|this\s+is|na\s+peru)\s+", "", raw_name, flags=re.IGNORECASE).strip().title()
         if not name:
             name = raw_name.strip().title()
 
-        svc = self.onboarding_service
-        svc.clear_hot_lead(telegram_id)
         svc.save_answer(telegram_id, "name", name)
 
         _send_typing(self.bot, telegram_id, 1.5)
@@ -155,6 +177,7 @@ class OnboardingHandler:
 
         svc = self.onboarding_service
         svc.clear_hot_lead(telegram_id)
+        name = svc.get_display_name(telegram_id)
         existing_data = svc.get_data(telegram_id)
 
         current_age = existing_data.get("age")
@@ -187,8 +210,11 @@ class OnboardingHandler:
             self.bot.send_message(telegram_id, "Mee age cheppadam marchipoyaru, please mee age kooda cheppandi.")
             return
 
+        # Casual chat bridge
+        user = database.get_user(telegram_id) or {}
+        bridge_reply = ai_service.generate_conversational_bridge(text, name, STATE_AWAITING_AGE_OCCUPATION, user)
         _send_typing(self.bot, telegram_id, 1.5)
-        self.bot.send_message(telegram_id, "Mee age and profession rendu cheppandi (e.g. 24 Software Engineer).")
+        self.bot.send_message(telegram_id, bridge_reply)
 
     def _extract_age_and_profession(self, text: str):
         clean_text = text.strip()
@@ -216,7 +242,7 @@ class OnboardingHandler:
         return None, profession
 
     # ------------------------------------------------------------------
-    # Step 4: Capital
+    # Step 4: Capital -> Direct Answer vs Casual Chat Bridge
     # ------------------------------------------------------------------
     def _handle_capital_step(self, message: Message):
         telegram_id = message.from_user.id
@@ -226,13 +252,19 @@ class OnboardingHandler:
 
         svc = self.onboarding_service
         svc.clear_hot_lead(telegram_id)
+        name = svc.get_display_name(telegram_id)
 
         parsed_amount = svc.parse_capital_amount(text)
+
+        # If user did NOT send numbers (they are chatting casually e.g. "Chilling", "Work lo unna", "Who are you")
         if parsed_amount is None:
-            _send_typing(self.bot, telegram_id, 1.2)
-            self.bot.send_message(telegram_id, "Mee trading capital amount entha undo numbers lo cheppandi (e.g. 5000 or 10000):")
+            user = database.get_user(telegram_id) or {}
+            bridge_reply = ai_service.generate_conversational_bridge(text, name, STATE_AWAITING_CAPITAL, user)
+            _send_typing(self.bot, telegram_id, 1.5)
+            self.bot.send_message(telegram_id, bridge_reply)
             return
 
+        # Direct valid capital amount entered
         svc.save_answer(telegram_id, "capital", text)
         svc.save_answer(telegram_id, "capital_amount", parsed_amount)
 
@@ -286,7 +318,7 @@ class OnboardingHandler:
             return
 
     # ------------------------------------------------------------------
-    # Step 6: 9-Digit Trading Account ID -> Strict 9-digit Validation & Submit
+    # Step 6: 9-Digit Trading Account ID -> Strict 9-digit Validation & Submit vs Casual Chat Bridge
     # ------------------------------------------------------------------
     def _handle_account_id_step(self, message: Message):
         telegram_id = message.from_user.id
@@ -300,9 +332,16 @@ class OnboardingHandler:
             return
 
         svc.clear_hot_lead(telegram_id)
+        name = svc.get_display_name(telegram_id)
 
-        # Extract only digits from user's message
         digits_only = re.sub(r"\D", "", text)
+
+        # If user is chatting casually (e.g. "Work lo unna", "Chilling", "Who are you?", "Send video link again")
+        if len(digits_only) == 0:
+            bridge_reply = ai_service.generate_conversational_bridge(text, name, STATE_AWAITING_ACCOUNT_ID, user)
+            _send_typing(self.bot, telegram_id, 1.5)
+            self.bot.send_message(telegram_id, bridge_reply)
+            return
 
         # 1. Less than 9 digits
         if len(digits_only) < 9:
@@ -354,16 +393,14 @@ class OnboardingHandler:
 
             # TIME-BASED MESSAGE (11:00 PM to 7:00 AM IST check)
             now_ist = datetime.now(pytz.timezone("Asia/Kolkata"))
-            current_hour = now_ist.hour  # 0 to 23
+            current_hour = now_ist.hour
 
             if current_hour >= 23 or current_hour < 7:
-                # Nighttime message (11 PM to 7 AM)
                 confirmation_msg = (
                     "Hey, sorry for the inconvenience. Our Team is not available from 11 Pm to 7 Am.\n\n"
                     "Your VIP joining request will be verified once the team is available"
                 )
             else:
-                # Daytime message (7 AM to 11 PM)
                 confirmation_msg = (
                     "Pls wait, you will be added in the VIP once the verification is done by our backend team"
                 )
@@ -371,7 +408,7 @@ class OnboardingHandler:
             _send_typing(self.bot, telegram_id, 1.5)
             self.bot.send_message(telegram_id, confirmation_msg)
 
-            # Send clean review card ONLY to Updates Channel with click-to-copy HTML code format
+            # Send review card ONLY to Updates Channel with click-to-copy HTML code format
             self._notify_updates_channel_only(registration_id, registration_data, user)
             logger.info(f"Verification submitted for {telegram_id} with 9-digit ID: {account_id}")
 
