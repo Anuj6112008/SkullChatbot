@@ -20,8 +20,8 @@ from utils import get_current_datetime, get_current_timestamp
 
 logger = logging.getLogger(__name__)
 
-# Day 1 Delays: 15m, 30m, 1h, 5h, 12h
-DAY1_DELAYS_MIN = [15, 30, 60, 300, 720]
+# Day 1 Delays: 15m, 45m, 2h (120m), 4h (240m), 8h (480m), 12h (720m)
+DAY1_DELAYS_MIN = [15, 45, 120, 240, 480, 720]
 
 
 def _get_scheduler_tz():
@@ -289,7 +289,7 @@ class SchedulerService:
             logger.error(f"Failed in process_vip_resources_delivery: {e}")
 
     # ------------------------------------------------------------------
-    # 4. Context-Aware Hot-Lead Followups (Day 1: 15m, 30m, 1h, 5h, 12h | Day 2+: 2/day)
+    # 4. Casual Reconnect Followups (Day 1: 15m, 45m, 2h, 4h, 8h, 12h | Day 2+: 2/day)
     # ------------------------------------------------------------------
     def schedule_hot_lead_check(self):
         try:
@@ -316,7 +316,6 @@ class SchedulerService:
                     if not telegram_id or user.get("blocked"):
                         continue
 
-                    # If still in initial capital promo sequence, let promo sequence finish first
                     if user.get("onboarding_state") == STATE_AWAITING_POSITIVE_INTENT:
                         continue
 
@@ -366,7 +365,7 @@ class SchedulerService:
                 self._send_hot_lead_day1_nudge(user, attempt=1)
         else:
             if last_sent_dt:
-                gap_minutes = self.day1_delays[sent_count] if sent_count < len(self.day1_delays) else 300
+                gap_minutes = self.day1_delays[sent_count] if sent_count < len(self.day1_delays) else 720
                 if (now - last_sent_dt).total_seconds() / 60 >= gap_minutes:
                     self._send_hot_lead_day1_nudge(user, attempt=sent_count + 1)
 
@@ -377,11 +376,8 @@ class SchedulerService:
             name = self.onboarding_service.get_display_name(telegram_id)
             current_state = user.get("onboarding_state")
 
-            # Step-specific nudge: passes current_state to AI engine
-            if current_state == STATE_AWAITING_ACCOUNT_ID:
-                nudge = ai_service.generate_account_id_nudge(name, attempt=attempt)
-            else:
-                nudge = ai_service.generate_idle_followup(name, step=current_state, attempt=attempt)
+            # Generates casual check-in with Nisha's persona
+            nudge = ai_service.generate_idle_followup(name=name, step=current_state, attempt=attempt)
 
             try:
                 self.bot.send_message(telegram_id, nudge)
@@ -389,7 +385,7 @@ class SchedulerService:
                 database.update_user(telegram_id, {"last_followup_at": get_current_timestamp()})
                 if attempt == 1:
                     self.onboarding_service.mark_hot_lead(telegram_id)
-                logger.info(f"Sent Day 1 follow-up #{attempt} for step '{current_state}' to {telegram_id}")
+                logger.info(f"Sent Day 1 casual check-in #{attempt} to {telegram_id}: '{nudge}'")
             except Exception as e:
                 logger.error(f"Failed to send Day 1 nudge to {telegram_id}: {e}")
                 if "blocked" in str(e).lower() or "deactivated" in str(e).lower():
@@ -418,16 +414,13 @@ class SchedulerService:
             name = self.onboarding_service.get_display_name(telegram_id)
             current_state = user.get("onboarding_state")
 
-            if current_state == STATE_AWAITING_ACCOUNT_ID:
-                msg = ai_service.generate_account_id_nudge(name, attempt=attempt + 10)
-            else:
-                msg = ai_service.generate_day2_followup(name, step=current_state, attempt=attempt)
+            msg = ai_service.generate_day2_followup(name=name, step=current_state, attempt=attempt)
 
             try:
                 self.bot.send_message(telegram_id, msg)
                 self.onboarding_service.increment_hot_lead_day2(telegram_id)
                 database.update_user(telegram_id, {"last_followup_at": get_current_timestamp()})
-                logger.info(f"Sent Day 2+ follow-up #{attempt} for step '{current_state}' to {telegram_id}")
+                logger.info(f"Sent Day 2+ follow-up #{attempt} to {telegram_id}: '{msg}'")
             except Exception as e:
                 logger.error(f"Failed to send Day 2 follow-up to {telegram_id}: {e}")
                 if "blocked" in str(e).lower() or "deactivated" in str(e).lower():
