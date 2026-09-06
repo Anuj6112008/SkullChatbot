@@ -70,10 +70,10 @@ class Config:
     CAPITAL_LOW_THRESHOLD = int(os.getenv("CAPITAL_LOW_THRESHOLD", "4999"))
     CAPITAL_MID_THRESHOLD = int(os.getenv("CAPITAL_MID_THRESHOLD", "9999"))
 
-    # Hot-lead followup timings
+    # Hot-lead followup timings (in minutes) for Day 1: 15m, 30m, 1h, 5h, 12h
     HOT_LEAD_DAY1_DELAYS = [
         int(x) for x in os.getenv(
-            "HOT_LEAD_DAY1_DELAYS", "15,30,60,300"
+            "HOT_LEAD_DAY1_DELAYS", "15,30,60,300,720"
         ).split(",") if x.strip()
     ]
     HOT_LEAD_DAY2_PER_DAY = int(os.getenv("HOT_LEAD_DAY2_PER_DAY", "2"))
