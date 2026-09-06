@@ -66,9 +66,9 @@ def register_join_request_handlers(bot: TeleBot, onboarding_service: OnboardingS
 
             if result.get("success") and result.get("action") == "approved":
                 try:
-                    # Client's exact Telglish Intro with realistic typing pauses
+                    # Client's updated Intro with Nisha ☺️
                     _send_typing(bot, telegram_id, 1.5)
-                    bot.send_message(telegram_id, "Hello, Im NIsha From Skull Support Team")
+                    bot.send_message(telegram_id, "Hello, Im Nisha ☺️ From Skull Support Team")
 
                     _send_typing(bot, telegram_id, 1.5)
                     bot.send_message(telegram_id, "Indake mee Joining request Accept chesa")
