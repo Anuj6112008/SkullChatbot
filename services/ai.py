@@ -328,24 +328,34 @@ class AIService:
                 "Complete your registration and send your 9-digit Trading ID so we can activate your VIP access right away 😊"
             )
 
-    def generate_account_id_nudge(self, name: str = "") -> str:
-        """Persuasive English AI Nudge for missing 9-digit trading ID."""
+    def generate_account_id_nudge(self, name: str = "", attempt: int = 1) -> str:
+        """Persuasive English AI Nudge for missing 9-digit trading ID across attempts 1-5 and Day 2."""
         try:
             name_note = f"User name is {name}." if name else ""
+
+            # Dynamic tone per attempt
+            attempt_instructions = {
+                1: "This is Follow-up 1 (15 min after steps). Gentle, polite check-in asking for their 9-digit Trading Account ID.",
+                2: "This is Follow-up 2 (30 min after 1st). Warm check-in asking if they faced any difficulty finding their 9-digit ID on their broker profile.",
+                3: "This is Follow-up 3 (1 hour after 2nd). Motivate them by mentioning that daily VIP signals & PMS training are waiting once their ID is verified.",
+                4: "This is Follow-up 4 (5 hours after 3rd). Offer quick support if they got stuck during deposit or account setup.",
+                5: "This is Follow-up 5 (12 hours after 4th). End-of-day check-in reminding them to drop their 9-digit ID whenever they're free to complete VIP setup.",
+            }
+            inst = attempt_instructions.get(attempt, "Friendly reminder asking them to send their 9-digit Trading ID to activate VIP access.")
+
             prompt = (
                 f"{name_note}\n"
-                "The user registered but hasn't sent their 9-digit Trading Account ID yet. "
-                "Write a short, polite reminder in clean, friendly Indian English (strictly NO Telugu words). "
-                "Explain that our team is waiting for their 9-digit Trading Account ID to verify and approve their VIP access. "
-                "Keep it 1 to 2 short lines only."
+                f"{inst}\n"
+                "Write a short, friendly message in clean, natural Indian English (strictly NO Telugu/regional words). "
+                "Keep it 1 to 2 lines only. Friendly, casual, and motivating tone."
             )
             payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, polite reminder messages in clean English only."},
+                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, polite, engaging messages in clean Indian English only."},
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": 0.6,
+                "temperature": 0.7,
                 "max_tokens": 200,
                 "reasoning_effort": "low"
             }
@@ -353,24 +363,31 @@ class AIService:
             response.raise_for_status()
             data = response.json()
             text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            return sanitize_text(text) or (
-                "Hey! Please send your 9-digit Trading Account ID here so our backend team can verify and approve your VIP access 👍"
-            )
+
+            fallbacks = {
+                1: "Hey! Just send your 9-digit Trading Account ID here so our team can verify and activate your VIP access 👍",
+                2: "Hey! Did you face any issue finding your 9-digit Trading ID? Let me know if you need help finding it on your profile 😊",
+                3: "Just checking in! Once you share your 9-digit Trading Account ID, our team will activate your VIP signals and classes 🚀",
+                4: "Hey! Your VIP access is almost ready. Please send your 9-digit Trading Account ID to complete the verification today 👍",
+                5: "Hey, hope you had a good day! Send your 9-digit Trading ID whenever you're free so we can complete your VIP setup 😊"
+            }
+            fallback_text = fallbacks.get(attempt, "Hey! Please send your 9-digit Trading Account ID here so our backend team can verify and approve your VIP access 👍")
+
+            return sanitize_text(text) or fallback_text
         except Exception as e:
-            logger.error(f"Account ID nudge generation failed: {e}")
-            return (
-                "Hey! Please send your 9-digit Trading Account ID here so our backend team can verify and approve your VIP access 👍"
-            )
+            logger.error(f"Account ID nudge generation failed for attempt {attempt}: {e}")
+            return "Hey! Please send your 9-digit Trading Account ID here so our backend team can verify and approve your VIP access 👍"
 
     def generate_idle_followup(self, name: str = "", attempt: int = 1) -> str:
         """Day-1 idle nudge in clean, friendly English."""
         try:
             name_note = f"User name is {name}." if name else ""
             attempt_tone = {
-                1: "First nudge — very gentle and casual, checking if they are still connected.",
-                2: "Second nudge — warm and friendly, reminding them to complete the chat.",
-                3: "Third nudge — remind them about the VIP trading opportunity in a friendly way.",
-                4: "Final nudge for today — gentle reminder to finish their registration whenever free.",
+                1: "First nudge (15m) — very gentle and casual, checking if they are still connected.",
+                2: "Second nudge (+30m) — warm and friendly, checking if they have any doubts.",
+                3: "Third nudge (+1h) — remind them about the VIP trading opportunity in a friendly way.",
+                4: "Fourth nudge (+5h) — gentle check-in to see if they're free to finish.",
+                5: "Fifth nudge (+12h) — end-of-day check-in to continue the conversation whenever ready.",
             }.get(attempt, "Gentle check-in.")
 
             prompt = (
