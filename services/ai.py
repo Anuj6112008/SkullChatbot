@@ -292,8 +292,110 @@ class AIService:
             logger.error(f"Extraction failed: {e}")
             return {"age": None, "profession": None}
 
+    def generate_idle_followup(self, name: str = "", step: str = "", attempt: int = 1) -> str:
+        """Step-specific, context-aware Day 1 follow-up in clean Indian English."""
+        try:
+            name_str = f"Hey {name}!" if name else "Hey!"
+
+            step_contexts = {
+                "awaiting_capital": "The user stopped while being asked how much trading capital in INR they have. Remind them to share their trading capital amount so we can suggest the right trading strategy/plan for them.",
+                "awaiting_age_occupation": "The user stopped while being asked for their age and profession. Remind them to share their age and profession so we can guide them properly.",
+                "awaiting_name": "The user stopped while being asked for their name. Remind them to share their name so we can introduce ourselves and proceed.",
+                "awaiting_experience": "The user stopped while being asked if they have trading experience. Remind them to let us know if they have experience or are a beginner.",
+                "awaiting_account_id": "The user stopped while being asked for their 9-digit Trading Account ID. Remind them to send their 9-digit account ID so we can verify and approve their VIP access.",
+            }
+
+            context_desc = step_contexts.get(step, "The user stopped replying mid-conversation. Remind them to continue where they left off.")
+
+            prompt = (
+                f"User name: {name or 'User'}\n"
+                f"Current missing step: {step}\n"
+                f"Context: {context_desc}\n"
+                f"Follow-up Attempt: #{attempt}\n\n"
+                "Write a short, friendly, and motivating check-in message in clean, natural Indian English (strictly NO Telugu/regional words). "
+                "Specifically ask for the exact missing information mentioned in the context. "
+                "Keep it 1 to 2 lines only. Warm, polite, and casual tone."
+            )
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, step-specific friendly reminders in clean English only."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 200,
+                "reasoning_effort": "low"
+            }
+            response = self.client.post(self.api_url, headers=self.headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+            fallbacks = {
+                "awaiting_capital": f"{name_str} Please share how much trading capital you have in INR so we can suggest the right plan for you 😊",
+                "awaiting_age_occupation": f"{name_str} Please let us know your age and profession so we can guide you in the best way 👍",
+                "awaiting_name": "Hey! You forgot to tell us your name. What should we call you? 😊",
+                "awaiting_experience": "Hey! Do you have any prior trading experience or are you starting from zero? Let us know so we can guide you 👍",
+                "awaiting_account_id": f"{name_str} Please send your 9-digit Trading Account ID so our backend team can verify and approve your VIP access 👍",
+            }
+            fallback_text = fallbacks.get(step, f"{name_str} Just checking in — whenever you're free, let's complete your setup! 😊")
+
+            return sanitize_text(text) or fallback_text
+        except Exception as e:
+            logger.error(f"Idle followup generation failed for step {step}: {e}")
+            if step == "awaiting_capital":
+                return f"Hey {name}! Please share how much trading capital you have in INR so we can suggest the right plan for you 😊" if name else "Hey! Please share how much trading capital you have in INR so we can suggest the right plan for you 😊"
+            return "Hey, are you still there? Waiting for your reply 🙂"
+
+    def generate_day2_followup(self, name: str = "", step: str = "", attempt: int = 1) -> str:
+        """Step-specific Day 2+ follow-up in clean Indian English."""
+        try:
+            name_str = f"Hey {name}!" if name else "Hey!"
+
+            step_contexts = {
+                "awaiting_capital": "The user left yesterday while we were asking for their trading capital amount. Remind them to share their capital so we can finalize their trading plan.",
+                "awaiting_age_occupation": "The user left yesterday while we were asking for their age and profession.",
+                "awaiting_name": "The user left yesterday without sharing their name.",
+                "awaiting_experience": "The user left yesterday without answering if they have trading experience.",
+                "awaiting_account_id": "The user left yesterday without sending their 9-digit Trading Account ID.",
+            }
+
+            context_desc = step_contexts.get(step, "The user left our registration chat yesterday.")
+
+            prompt = (
+                f"User name: {name or 'User'}\n"
+                f"Context: {context_desc}\n"
+                f"Follow-up #{attempt} for Day 2+.\n\n"
+                "Write a short, polite reminder in clean, friendly Indian English (strictly NO Telugu words) "
+                "mentioning what they left incomplete and encouraging them to complete it whenever free. 1 to 2 lines only."
+            )
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, step-specific friendly reminders in clean English only."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 200,
+                "reasoning_effort": "low"
+            }
+            response = self.client.post(self.api_url, headers=self.headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+            fallbacks = {
+                "awaiting_capital": f"{name_str} Looks like you left our chat yesterday. Whenever you're free, share your trading capital so we can get started 😊",
+                "awaiting_account_id": f"{name_str} Looks like your VIP registration is almost done! Just send your 9-digit Trading Account ID whenever you're free 👍",
+            }
+            fallback_text = fallbacks.get(step, f"{name_str} Looks like you left our chat halfway — whenever you're free, let's complete your setup 😊")
+
+            return sanitize_text(text) or fallback_text
+        except Exception as e:
+            logger.error(f"Day2 followup generation failed for step {step}: {e}")
+            return "Hey, looks like you left our chat halfway — whenever you're free, let's complete your registration 😊"
+
     def generate_registration_nudge(self, name: str = "") -> str:
-        """Persuasive English AI Nudge for missing registration."""
         try:
             name_note = f"User name is {name}." if name else ""
             prompt = (
@@ -333,7 +435,6 @@ class AIService:
         try:
             name_note = f"User name is {name}." if name else ""
 
-            # Dynamic tone per attempt
             attempt_instructions = {
                 1: "This is Follow-up 1 (15 min after steps). Gentle, polite check-in asking for their 9-digit Trading Account ID.",
                 2: "This is Follow-up 2 (30 min after 1st). Warm check-in asking if they faced any difficulty finding their 9-digit ID on their broker profile.",
@@ -377,72 +478,6 @@ class AIService:
         except Exception as e:
             logger.error(f"Account ID nudge generation failed for attempt {attempt}: {e}")
             return "Hey! Please send your 9-digit Trading Account ID here so our backend team can verify and approve your VIP access 👍"
-
-    def generate_idle_followup(self, name: str = "", attempt: int = 1) -> str:
-        """Day-1 idle nudge in clean, friendly English."""
-        try:
-            name_note = f"User name is {name}." if name else ""
-            attempt_tone = {
-                1: "First nudge (15m) — very gentle and casual, checking if they are still connected.",
-                2: "Second nudge (+30m) — warm and friendly, checking if they have any doubts.",
-                3: "Third nudge (+1h) — remind them about the VIP trading opportunity in a friendly way.",
-                4: "Fourth nudge (+5h) — gentle check-in to see if they're free to finish.",
-                5: "Fifth nudge (+12h) — end-of-day check-in to continue the conversation whenever ready.",
-            }.get(attempt, "Gentle check-in.")
-
-            prompt = (
-                f"{name_note}\n"
-                f"The user stopped replying mid-conversation (Follow-up #{attempt}). {attempt_tone}\n"
-                "Write a short, friendly check-in message in clean, natural Indian English (strictly NO Telugu words). "
-                "One or two lines only. Casual, polite, and warm tone."
-            )
-            payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, warm, casual messages in clean English only."},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.7,
-                "max_tokens": 200,
-                "reasoning_effort": "low"
-            }
-            response = self.client.post(self.api_url, headers=self.headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            return sanitize_text(text) or "Hey, are you still there? Waiting for your reply 🙂"
-        except Exception as e:
-            logger.error(f"Idle followup generation failed: {e}")
-            return "Hey, are you still there? Waiting for your reply 🙂"
-
-    def generate_day2_followup(self, name: str = "", attempt: int = 1) -> str:
-        """Day-2+ follow-up in clean, friendly English."""
-        try:
-            name_note = f"User name is {name}." if name else ""
-            prompt = (
-                f"{name_note}\n"
-                "This user left our registration chat halfway through yesterday and hasn't finished it yet. "
-                "Write a short, polite reminder in clean, friendly Indian English (strictly NO Telugu words) "
-                "encouraging them to complete their registration whenever they are free. One or two lines only."
-            )
-            payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": "You are Nisha from Team Skull. Write short, friendly reminders in clean English only."},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.7,
-                "max_tokens": 200,
-                "reasoning_effort": "low"
-            }
-            response = self.client.post(self.api_url, headers=self.headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            return sanitize_text(text) or "Hey, looks like you left our chat halfway — whenever you're free, let's complete your registration 😊"
-        except Exception as e:
-            logger.error(f"Day2 followup generation failed: {e}")
-            return "Hey, looks like you left our chat halfway — whenever you're free, let's complete your registration 😊"
 
 
 ai_service = AIService()
