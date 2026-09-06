@@ -102,9 +102,9 @@ def register_start_handlers(
                 )
                 return
 
-            # 4. Start Onboarding directly with typing pauses
+            # 4. Start Onboarding directly with Nisha ☺️ and typing pauses
             _send_typing(bot, telegram_id, 1.5)
-            bot.send_message(telegram_id, "Hello, Im NIsha From Skull Support Team")
+            bot.send_message(telegram_id, "Hello, Im Nisha ☺️ From Skull Support Team")
 
             _send_typing(bot, telegram_id, 1.5)
             bot.send_message(telegram_id, "Indake mee Joining request Accept chesa")
