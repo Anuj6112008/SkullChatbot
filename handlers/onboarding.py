@@ -112,8 +112,8 @@ class OnboardingHandler:
         is_beginner = any(re.search(rf"\b{k}\b", clean) for k in no_exp_words)
         is_experienced = any(re.search(rf"\b{k}\b", clean) for k in has_exp_words)
 
-        if not is_beginner and not is_experienced and len(text.split()) > 3:
-            # User is asking something off-topic -> Bridge back
+        if not is_beginner and not is_experienced and len(text.split()) > 2:
+            # Casual chatter -> Bridge back
             user = database.get_user(telegram_id) or {}
             bridge_reply = ai_service.generate_conversational_bridge(text, "", STATE_AWAITING_EXPERIENCE, user)
             _send_typing(self.bot, telegram_id, 1.5)
@@ -133,29 +133,30 @@ class OnboardingHandler:
         svc.set_state(telegram_id, STATE_AWAITING_NAME)
 
     # ------------------------------------------------------------------
-    # Step 2: Name -> EXACTLY 2 messages
+    # Step 2: Name -> Strict Name Detection vs Casual Follow-up Chat
     # ------------------------------------------------------------------
     def _handle_name_step(self, message: Message):
         telegram_id = message.from_user.id
-        raw_name = sanitize_text(message.text)
-        if not raw_name:
+        raw_text = sanitize_text(message.text)
+        if not raw_text:
             return
 
         svc = self.onboarding_service
         svc.clear_hot_lead(telegram_id)
 
-        # Check if user asked an off-topic question instead of giving name
-        if "?" in raw_name or any(w in raw_name.lower() for w in ["who are you", "why", "insta", "number", "date", "enti"]):
+        # Check if the user is actually providing a real name
+        validated_name = ai_service.check_if_name(raw_text)
+
+        # If it is NOT a valid name (user is chatting casually e.g. "Emle cheppu", "Chilling", "Who are you?")
+        if not validated_name:
             user = database.get_user(telegram_id) or {}
-            bridge_reply = ai_service.generate_conversational_bridge(raw_name, "", STATE_AWAITING_NAME, user)
+            bridge_reply = ai_service.generate_conversational_bridge(raw_text, "", STATE_AWAITING_NAME, user)
             _send_typing(self.bot, telegram_id, 1.5)
             self.bot.send_message(telegram_id, bridge_reply)
             return
 
-        name = re.sub(r"^(?:my\s+name\s+is|i\s+am|i'm|im|this\s+is|na\s+peru)\s+", "", raw_name, flags=re.IGNORECASE).strip().title()
-        if not name:
-            name = raw_name.strip().title()
-
+        # Valid Name extracted
+        name = validated_name
         svc.save_answer(telegram_id, "name", name)
 
         _send_typing(self.bot, telegram_id, 1.5)
@@ -167,7 +168,7 @@ class OnboardingHandler:
         svc.set_state(telegram_id, STATE_AWAITING_AGE_OCCUPATION)
 
     # ------------------------------------------------------------------
-    # Step 3: Age + Profession Strict Isolation
+    # Step 3: Age + Profession (with Name correction support)
     # ------------------------------------------------------------------
     def _handle_age_profession_step(self, message: Message):
         telegram_id = message.from_user.id
@@ -178,8 +179,18 @@ class OnboardingHandler:
         svc = self.onboarding_service
         svc.clear_hot_lead(telegram_id)
         name = svc.get_display_name(telegram_id)
-        existing_data = svc.get_data(telegram_id)
+        user = database.get_user(telegram_id) or {}
 
+        # 1. Check if user is trying to correct their name (e.g. "Na peru Anuj", "My name is not that")
+        if any(p in text.lower() for p in ["na peru", "my name", "kaadu", "kadu", "not my name", "peru idi kaadu"]):
+            new_name = ai_service.check_if_name(text)
+            if new_name:
+                svc.save_answer(telegram_id, "name", new_name)
+                _send_typing(self.bot, telegram_id, 1.5)
+                self.bot.send_message(telegram_id, f"Ahh okay, noted {new_name}! 😊 Mi age and profession kooda cheppandi, mana setup finish cheddam 👍")
+                return
+
+        existing_data = svc.get_data(telegram_id)
         current_age = existing_data.get("age")
         current_prof = existing_data.get("profession")
 
@@ -211,7 +222,6 @@ class OnboardingHandler:
             return
 
         # Casual chat bridge
-        user = database.get_user(telegram_id) or {}
         bridge_reply = ai_service.generate_conversational_bridge(text, name, STATE_AWAITING_AGE_OCCUPATION, user)
         _send_typing(self.bot, telegram_id, 1.5)
         self.bot.send_message(telegram_id, bridge_reply)
@@ -232,14 +242,17 @@ class OnboardingHandler:
                 rem = clean_text[:age_match.start()] + " " + clean_text[age_match.end():]
                 tokens = re.findall(r"[a-zA-Z]+", rem)
                 meaningful = [t for t in tokens if t.lower() not in STOPWORDS]
-                profession = " ".join(meaningful).title() if meaningful else None
+                profession = " ".join(meaningful).title() if len(meaningful) > 0 and len(" ".join(meaningful)) >= 3 else None
                 return age, profession
 
+        # Pure text -> Check if it's a realistic profession (must not be general small talk)
         tokens = re.findall(r"[a-zA-Z]+", clean_text)
         meaningful = [t for t in tokens if t.lower() not in STOPWORDS]
-        profession = " ".join(meaningful).title() if meaningful else None
+        if len(meaningful) >= 1 and len(" ".join(meaningful)) >= 3 and not any(w in clean_text.lower() for w in ["kaadu", "kadu", "enti", "cheppu", "emle"]):
+            profession = " ".join(meaningful).title()
+            return None, profession
 
-        return None, profession
+        return None, None
 
     # ------------------------------------------------------------------
     # Step 4: Capital -> Direct Answer vs Casual Chat Bridge
@@ -256,7 +269,7 @@ class OnboardingHandler:
 
         parsed_amount = svc.parse_capital_amount(text)
 
-        # If user did NOT send numbers (they are chatting casually e.g. "Chilling", "Work lo unna", "Who are you")
+        # If user did NOT send numbers (chatting casually e.g. "Chilling", "Work lo unna", "Who are you")
         if parsed_amount is None:
             user = database.get_user(telegram_id) or {}
             bridge_reply = ai_service.generate_conversational_bridge(text, name, STATE_AWAITING_CAPITAL, user)
@@ -408,7 +421,7 @@ class OnboardingHandler:
             _send_typing(self.bot, telegram_id, 1.5)
             self.bot.send_message(telegram_id, confirmation_msg)
 
-            # Send review card ONLY to Updates Channel with click-to-copy HTML code format
+            # Send clean review card ONLY to Updates Channel with click-to-copy HTML code format
             self._notify_updates_channel_only(registration_id, registration_data, user)
             logger.info(f"Verification submitted for {telegram_id} with 9-digit ID: {account_id}")
 
