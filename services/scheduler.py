@@ -20,8 +20,8 @@ from utils import get_current_datetime, get_current_timestamp
 
 logger = logging.getLogger(__name__)
 
-# Day 1 Delays: 15m, 45m, 2h (120m), 4h (240m), 8h (480m), 12h (720m)
-DAY1_DELAYS_MIN = [15, 45, 120, 240, 480, 720]
+# TESTING DELAYS: 1st Nudge at 5m, 2nd Nudge at +10m, 3rd at +15m...
+DAY1_DELAYS_MIN = [5, 10, 15, 20, 25]
 
 
 def _get_scheduler_tz():
@@ -61,13 +61,10 @@ class SchedulerService:
         )
         self.running = False
 
-        try:
-            self.day1_delays = config.HOT_LEAD_DAY1_DELAYS or DAY1_DELAYS_MIN
-        except Exception:
-            self.day1_delays = DAY1_DELAYS_MIN
-
-        self.day2_per_day = getattr(config, "HOT_LEAD_DAY2_PER_DAY", 2)
-        self.idle_minutes = getattr(config, "HOT_LEAD_IDLE_MINUTES", 10)
+        # Use test delays
+        self.day1_delays = DAY1_DELAYS_MIN
+        self.day2_per_day = 2
+        self.idle_minutes = 2  # Considers idle after 2 minutes for testing
 
     def start(self):
         if self.running:
@@ -81,7 +78,7 @@ class SchedulerService:
         self.schedule_followup_check()
         self.schedule_scheduled_post_check()
         self.schedule_cleanup()
-        logger.info("Scheduler started successfully with Asia/Kolkata timezone")
+        logger.info("Scheduler started successfully in Testing Mode (5m/10m delays)")
 
     def stop(self):
         if not self.running:
@@ -245,7 +242,6 @@ class SchedulerService:
                 id="vip_resources_check",
                 replace_existing=True
             )
-            logger.info("VIP resources 2-minute post-approval check scheduled")
         except Exception as e:
             logger.error(f"Failed to schedule VIP resources check: {e}")
 
@@ -289,17 +285,17 @@ class SchedulerService:
             logger.error(f"Failed in process_vip_resources_delivery: {e}")
 
     # ------------------------------------------------------------------
-    # 4. Context-Aware Dynamic Hot-Lead Followups (Day 1: 15m, 45m, 2h, 4h, 8h, 12h | Day 2+: 2/day)
+    # 4. Context-Aware Dynamic Hot-Lead Followups (Testing: 5m, 10m, 15m...)
     # ------------------------------------------------------------------
     def schedule_hot_lead_check(self):
         try:
             self.scheduler.add_job(
                 self.process_hot_leads,
-                IntervalTrigger(minutes=2, timezone=_get_scheduler_tz()),
+                IntervalTrigger(minutes=1, timezone=_get_scheduler_tz()),
                 id="hot_lead_check",
                 replace_existing=True
             )
-            logger.info("Hot-lead check scheduled (2-min interval)")
+            logger.info("Hot-lead check scheduled (1-min interval for testing)")
         except Exception as e:
             logger.error(f"Failed to schedule hot-lead check: {e}")
 
@@ -366,7 +362,7 @@ class SchedulerService:
                 self._send_hot_lead_day1_nudge(user, attempt=1)
         else:
             if last_sent_dt:
-                gap_minutes = self.day1_delays[sent_count] if sent_count < len(self.day1_delays) else 720
+                gap_minutes = self.day1_delays[sent_count] if sent_count < len(self.day1_delays) else 30
                 if (now - last_sent_dt).total_seconds() / 60 >= gap_minutes:
                     self._send_hot_lead_day1_nudge(user, attempt=sent_count + 1)
 
