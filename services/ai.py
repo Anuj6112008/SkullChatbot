@@ -1,5 +1,6 @@
 import logging
 import re
+import random
 from typing import Dict, Any, Optional
 import httpx
 from config import config
@@ -43,9 +44,9 @@ class AIService:
 
     def get_default_system_prompt(self):
         return (
-            "You are Nisha, a warm, friendly female support assistant from Team Skull based in Hyderabad. "
-            "Mix natural Roman Telugu and English. Keep replies short (1-3 lines). "
-            "Never use Telugu Unicode characters. Use warm emojis (😊, 😌, 🫶, 😉). "
+            "You are Nisha, a very friendly, playful, casual girl helping users complete VIP trading onboarding. "
+            "Mix English and natural Roman Telugu (English alphabet only, e.g., 'Em chestunnav?', 'Busy ga unnav aa?'). "
+            "NEVER use Telugu Unicode characters. Use warm emojis (😊, 😌, 🫶, 😉). NEVER use laughing emojis (😂, 🤣). "
             "When users chat casually, chat naturally and smoothly bridge them back to their pending onboarding step."
         )
 
@@ -91,7 +92,6 @@ class AIService:
         clean = text.strip()
         words = clean.lower().split()
 
-        # Fast heuristic rejection for common Telugu/English casual phrases
         if len(words) >= 2 and all(w in COMMON_NON_NAMES for w in words):
             return None
         if len(words) == 1 and words[0] in COMMON_NON_NAMES:
@@ -99,14 +99,11 @@ class AIService:
         if "?" in clean or any(w in clean.lower() for w in ["who are you", "why", "insta", "number", "date", "enti", "cheppu", "emle", "emledu", "kaadu", "kadu"]):
             return None
 
-        # Clean common prefixes e.g. "My name is Anuj", "Na peru Rajat", "I am Ram"
         extracted = re.sub(r"^(?:my\s+name\s+is|i\s+am|i'm|im|this\s+is|na\s+peru|peru)\s+", "", clean, flags=re.IGNORECASE).strip()
         
-        # If clean single word containing only letters and not a stopword, accept directly
         if re.match(r"^[a-zA-Z]{2,20}$", extracted) and extracted.lower() not in COMMON_NON_NAMES:
             return extracted.title()
 
-        # LLM Verification for natural text
         try:
             prompt = (
                 f"The user was previously asked for their personal name.\n"
@@ -239,7 +236,7 @@ class AIService:
                 "1. Acknowledge and respond naturally, playfully, and warmly to whatever the user just said (e.g. 'Emle cheppu', 'Nothing chilling', 'Work lo unna', 'Who are you', asking for Instagram/phone/date, etc.).\n"
                 "2. Then smoothly and gently bridge the conversation back to the pending requirement and ask them to answer it.\n"
                 "Rules:\n"
-                "- Write in natural Roman Telugu + English (English alphabet only, e.g. 'Em chestunnav?', 'Btw, mana pending step complete cheddam').\n"
+                "- Write in natural Roman Telugu + English (English alphabet only, e.g., 'Em chestunnav?', 'Btw, mana pending step complete cheddam').\n"
                 "- NEVER write Telugu script.\n"
                 "- Keep it 2 to 3 short lines max.\n"
                 "- Use warm/playful emojis (😊, 😌, 🫶, 😉). NEVER use laughing emojis (😂, 🤣).\n"
@@ -277,27 +274,26 @@ class AIService:
             return "Ahh okay 😊 Free ayyaka mana pending step complete cheddam, ping cheyyi!"
 
     def generate_idle_followup(self, name: str = "", step: str = "", attempt: int = 1) -> str:
+        """Casual, non-promotional check-in follow-up in Roman Telugu + English for Day 1."""
         try:
             name_note = f"User name: {name}" if name else ""
 
             attempt_styles = {
-                1: "First follow-up (15 min after ghosting). Very short, casual check-in. E.g., 'Heyy, em chestunnav? 😊' or 'Busy ga unnav aa?' Do NOT mention registration.",
-                2: "Second follow-up (45 min). Casual and warm check-in. E.g., 'Busy ga unnav aa? 😊' or 'Everything okay?'",
-                3: "Third follow-up (2 hours). Playful check-in. E.g., 'Where did you disappear? 😌' or 'Ekkada disappear ayyav?'",
-                4: "Fourth follow-up (4 hours). Slightly teasing. E.g., 'Enti silent aipoyav? 😌'",
-                5: "Fifth follow-up (8 hours). Caring check-in. E.g., 'Emaina problem aa? Free ayyaka ping cheyyi 🫶'",
-                6: "Sixth follow-up (12 hours). Casual check-in. E.g., 'Heyy, free avaleda inka? 😊'"
+                1: "First follow-up (15 min). Short, casual check-in. E.g. asking what they are doing. DO NOT mention registration.",
+                2: "Second follow-up (45 min). Asking if they are busy. Friendly and warm.",
+                3: "Third follow-up (2 hours). Playfully asking where they disappeared. Warm teasing tone.",
+                4: "Fourth follow-up (4 hours). Slightly teasing check-in why they became silent.",
+                5: "Fifth follow-up (8 hours). Caring check-in asking if everything is okay or any problem.",
+                6: "Sixth follow-up (12 hours). Casual late check-in asking if they are free now."
             }
-            inst = attempt_styles.get(attempt, "Short, casual check-in in Roman Telugu. Friendly and warm.")
+            inst = attempt_styles.get(attempt, "Short, casual check-in in Roman Telugu + English. Friendly, natural, warm tone.")
 
             prompt = (
                 f"{name_note}\n"
-                f"{inst}\n\n"
-                "Rules:\n"
-                "- Write in Roman Telugu + English (English letters only).\n"
-                "- NEVER write Telugu script.\n"
-                "- Keep it 1 short line.\n"
-                "- Use warm/playful emojis (😊, 😌, 🫶, 😉). NEVER use laughing emojis (😂, 🤣)."
+                f"{inst}\n"
+                f"Attempt number: {attempt}\n\n"
+                "Task: Write ONE unique, short casual message (max 1 line) in natural Roman Telugu + English. "
+                "Use warm emojis (😊, 😌, 🫶, 😉). DO NOT use laughing emojis (😂, 🤣). Do NOT repeat the exact same text if asked again."
             )
             payload = {
                 "model": self.model,
@@ -305,8 +301,8 @@ class AIService:
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": 0.7,
-                "max_tokens": 150,
+                "temperature": 0.85,
+                "max_tokens": 120,
                 "reasoning_effort": "low"
             }
             response = self.client.post(self.api_url, headers=self.headers, json=payload)
@@ -315,26 +311,49 @@ class AIService:
             text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
             fallbacks = {
-                1: "Heyy, em chestunnav? 😊",
-                2: "Busy ga unnav aa? 😊",
-                3: "Where did you disappear? 😌",
-                4: "Enti silent aipoyav? 😌",
-                5: "Emaina problem aa? Free ayyaka ping cheyyi 🫶",
-                6: "Heyy, free avaleda inka? 😊"
+                1: f"Heyy {name or ''}, em chestunnav? 😊".strip(),
+                2: f"Heyy {name or ''}, busy ga unnav aa? 😊".strip(),
+                3: f"Where did you disappear {name or ''}? 😌".strip(),
+                4: f"Enti {name or ''}, sudden ga silent aipoyav? 😌".strip(),
+                5: f"Emaina problem aa {name or ''}? Free ayyaka ping cheyyi 🫶".strip(),
+                6: f"Heyy {name or ''}, inka free avaleda? 😊".strip()
             }
             return sanitize_text(text) or fallbacks.get(attempt, "Heyy, em chestunnav? 😊")
         except Exception as e:
             logger.error(f"Idle followup generation failed: {e}")
             return "Heyy, em chestunnav? 😊"
 
-    def generate_day2_followup(self, name: str = "", step: str = "", attempt: int = 1) -> str:
+    def generate_day2_followup(self, name: str = "", step: str = "", attempt: int = 1, days_idle: int = 1) -> str:
+        """Day 2+ follow-up with rich variation across days & attempts (Strictly NO repetitive 'ninna madhyalone')."""
         try:
-            name_note = f"User name: {name}" if name else ""
+            name_str = f"{name}" if name else ""
+
+            # Dynamic topic selection based on days idle and attempt to avoid repeating
+            if days_idle == 1:
+                # Day 2 (Yesterday)
+                day_context = "User left the registration chat yesterday. Tease them gently about disappearing yesterday or asking if they forgot."
+            elif days_idle == 2:
+                # Day 3
+                day_context = "User left the chat 2 days ago. Ask playfully if they forgot about their VIP setup or if they are still busy with work."
+            elif days_idle == 3:
+                # Day 4
+                day_context = "User has been inactive for a few days. Ask casually if they had lunch or what they are doing, and invite them to finish setup."
+            else:
+                # Day 5+
+                day_context = "User has been inactive for multiple days. Warm, casual, light check-in asking if they are free to connect."
+
             prompt = (
-                f"{name_note}\n"
-                "User left the chat yesterday. Write a short, friendly, teasing reminder in Roman Telugu + English "
-                "(e.g., 'Ninna madhyalone disappear aipoyav 😌', 'Marchipoyava? 😌', 'Free ayyaka mana registration finish cheddam 😊'). "
-                "Keep it 1 line. Warm emojis only."
+                f"User name: {name_str or 'there'}\n"
+                f"Days since inactive: {days_idle} days\n"
+                f"Today's follow-up attempt: #{attempt}\n"
+                f"Context: {day_context}\n\n"
+                "Task: Write a fresh, unique, 1-line friendly follow-up in Roman Telugu + English.\n"
+                "Rules:\n"
+                "- DO NOT say 'ninna madhyalone disappear aipoyav' if days_idle is greater than 1!\n"
+                "- Keep it very casual, teasing, or warm (e.g. 'Marchipoyava? 😌', 'Inka busy neena? 😊', 'Lunch ayyinda? Free ayyaka ping cheyyi', 'Gurthu unda? 😌').\n"
+                "- Max 1 to 2 lines.\n"
+                "- NEVER use Telugu Unicode characters.\n"
+                "- Use warm emojis (😊, 😌, 🫶, 😉). NEVER use laughing emojis (😂, 🤣)."
             )
             payload = {
                 "model": self.model,
@@ -342,7 +361,7 @@ class AIService:
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": 0.7,
+                "temperature": 0.85,
                 "max_tokens": 150,
                 "reasoning_effort": "low"
             }
@@ -351,14 +370,21 @@ class AIService:
             data = response.json()
             text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
-            fallbacks = {
-                1: "Ninna madhyalone disappear aipoyav 😌 Free ayyaka ping cheyyi.",
-                2: "Marchipoyava? 😌 Free unnapudu mana registration finish cheddam 😊"
-            }
-            return sanitize_text(text) or fallbacks.get(attempt, "Ninna madhyalone disappear aipoyav 😌 Free ayyaka ping cheyyi.")
+            # Varied fallback pool based on days & attempts
+            varied_fallbacks = [
+                f"Heyy {name_str}, marchipoyava? 😌 Free unnapudu mana registration finish cheddam 😊".strip(),
+                f"Hey {name_str}! Inka busy neena? Free ayyaka ping cheyyi 🫶".strip(),
+                f"Lunch ayyinda {name_str}? 😊 Free unnapudu ping cheyyi, mana VIP setup finish cheddam 😌".strip(),
+                f"Gurthu unna na inka? 😌 Free ayyaka ping cheyyi, VIP community lo add cheddam ✨".strip(),
+                f"Hey {name_str}, work lo full busy aa? Whenever you're free, let's complete your VIP access 👍".strip(),
+                f"Malli disappear aipoyav 😌 Free unnapudu message cheyyi, let's start!".strip()
+            ]
+            fallback_choice = varied_fallbacks[(attempt + days_idle) % len(varied_fallbacks)]
+
+            return sanitize_text(text) or fallback_choice
         except Exception as e:
             logger.error(f"Day2 followup failed: {e}")
-            return "Ninna madhyalone disappear aipoyav 😌 Free ayyaka ping cheyyi."
+            return f"Hey {name or ''}, marchipoyava? 😌 Free unnapudu ping cheyyi.".strip()
 
     def generate_caption(self, intent: str, video_path: str) -> str:
         try:
