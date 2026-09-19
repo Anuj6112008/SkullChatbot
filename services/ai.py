@@ -197,12 +197,13 @@ class AIService:
             return result
         except Exception as e:
             logger.error(f"AI response generation failed: {e}")
+            # Soft fallback - never show "technical issue" for normal chat
             return {
                 "intent": "GENERAL",
-                "response": "Technical issue valla reply late avthondi. Urgent unte support team ni reach avvandi.",
+                "response": "Arre, konchem slow ga undi 😅 Malli cheppu, nenu help chestha.",
                 "video": None,
                 "caption": None,
-                "support_needed": True,
+                "support_needed": False,
                 "error": str(e)
             }
 
