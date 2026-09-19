@@ -47,14 +47,26 @@ REENGAGEMENT_TEXT = (
 )
 
 REGISTRATION_STEPS_CAPTION = (
-    "Joining Link : {link}\n\n"
-    "Step 1: Register and open a new trading account using the link below.\n\n"
-    "Step 2: You will automatically get a 50% bonus on your deposit if you use this link.\n\n"
-    "Step 3: Deposit at least $50 to generate consistent profits.\n\n"
-    "Step 4: Send your trading account ID (e.g. 12355426789). "
-    "Our team will manually verify it and approve your joining ASAP.\n\n"
-    "Step 5: Once verified, you will be added to the VIP community and "
-    "receive all the exclusive VIP resources."
+    "🔥 **JOIN THE VIP COMMUNITY** 🔥\n\n"
+    "Follow these **5 simple steps** to complete your VIP registration 👇\n\n"
+    "🔗 **JOINING LINK**\n"
+    "{link}\n\n"
+    "━━━━━━━━━━━━━━━━━━\n\n"
+    "🟢 **STEP 1 — CREATE YOUR ACCOUNT**\n"
+    "Register and open a **new trading account** using the joining link above. 📝\n\n"
+    "🎁 **STEP 2 — GET YOUR BONUS**\n"
+    "Use the joining link and you will automatically receive a **50% deposit bonus**, subject to the platform's terms. 💰\n\n"
+    "💵 **STEP 3 — MAKE YOUR DEPOSIT**\n"
+    "Deposit **at least $50** to get started with the VIP trading setup. 🚀\n\n"
+    "🆔 **STEP 4 — SEND YOUR ACCOUNT ID**\n"
+    "Send us your **trading account ID**\n"
+    "Example: `12355426789`\n"
+    "Our team will manually verify your account and process your approval. ✅\n\n"
+    "👑 **STEP 5 — ENTER THE VIP COMMUNITY**\n"
+    "Once your account is verified, you will be added to the **VIP Community** and receive access to the exclusive VIP resources. 🔥\n\n"
+    "━━━━━━━━━━━━━━━━━━\n\n"
+    "⚡ **COMPLETE ALL 5 STEPS TO ACTIVATE YOUR VIP ACCESS** ⚡\n\n"
+    "💬 **Need help?** Just message me here, I will help you."
 )
 
 FINAL_NOTE = (
@@ -63,13 +75,13 @@ FINAL_NOTE = (
 )
 
 ACCOUNT_ID_PROMPT_CAPTION = (
-    "👆 𝐌𝐞 𝟗 𝐃𝐢𝐠𝐢𝐭 𝐓𝐫𝐚𝐝𝐢𝐧𝐠 𝐀𝐜𝐜𝐨𝐮𝐧𝐭 𝐈𝐝 🪪 send chesthe ne, Verify avthundi."
+    "👆 Please send your **9-digit Trading Account ID** so we can verify and approve your VIP access."
 )
 
 REJECTION_MESSAGE_TEMPLATE = (
-    "❌ Mi Registration Decline ayyindi \n\n"
-    "Kindly create account through our Student link to get VIP access\n\n"
-    "Kindly use this link👇👇\n"
+    "❌ Your registration was declined.\n\n"
+    "Please create your account through our official joining link to get VIP access.\n\n"
+    "Use this link 👇\n"
     "{link}"
 )
 
@@ -313,8 +325,9 @@ def send_registration_steps(bot: TeleBot, telegram_id: int):
         _send_typing(bot, telegram_id, 1.5)
         bot.send_message(
             telegram_id,
-            "Here is the Joining Process\n\n"
-            "Serious ga ne Trading Nerchukovadaniki , frst and basic thing oka manchi trading account undali.\n\nHere is the Full Process in Detail 👇"
+            "Here is the complete VIP joining process 👇\n\n"
+            "To learn trading seriously, the first basic step is to have a proper trading account.\n\n"
+            "Follow the steps carefully:"
         )
     except Exception as e:
         logger.error(f"Failed to send joining-process intro to {telegram_id}: {e}")
