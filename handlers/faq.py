@@ -1,4 +1,6 @@
 import logging
+import time
+import random
 from telebot import TeleBot
 from telebot.types import Message, CallbackQuery
 from config import config
@@ -12,6 +14,27 @@ from keyboards import get_start_keyboard, get_back_keyboard
 from utils import sanitize_text
 
 logger = logging.getLogger(__name__)
+
+
+def _send_typing(bot: TeleBot, chat_id: int, delay: float = 2.0):
+    """Show realistic typing indicator. Delay based on reply length (5-10s range)."""
+    try:
+        bot.send_chat_action(chat_id, "typing")
+        time.sleep(delay)
+    except Exception:
+        pass
+
+
+def _calc_typing_delay(text: str) -> float:
+    """Calculate realistic typing delay based on reply length (5 to 10 seconds)."""
+    if not text:
+        return 5.0
+    length = len(text)
+    # Base 5s + extra based on length, capped at 10s
+    delay = 5.0 + min(length / 80.0, 5.0)
+    # Small random variation so it feels human
+    delay += random.uniform(-0.5, 0.8)
+    return max(5.0, min(delay, 10.0))
 
 
 class FAQHandler:
@@ -71,10 +94,10 @@ class FAQHandler:
                 if not text:
                     return
 
-                bot.send_chat_action(telegram_id, "typing")
+                # Generate AI response first
                 response = ai_service.generate_response(text, user)
 
-                # If support ticket is needed
+                # Support ticket path
                 if response.get("support_needed"):
                     ticket = self.support_service.create_ticket(
                         telegram_id,
@@ -83,29 +106,48 @@ class FAQHandler:
                     )
                     if ticket and ticket.get("id"):
                         self.support_service.notify_admin_about_ticket(ticket)
-                    bot.send_message(
-                        telegram_id,
-                        response.get("response", "Mee query support team ki forward chesam. Thvaralo reply istharu.")
-                    )
+                    reply_text = response.get("response", "Mee query support team ki forward chesam. Thvaralo reply istharu.")
+                    delay = _calc_typing_delay(reply_text)
+                    _send_typing(bot, telegram_id, delay)
+                    bot.send_message(telegram_id, reply_text)
                     return
 
-                # Send pure natural text response (AI handles everything as per master prompt)
-                # No automatic FAQ video / robotic fallback messages
                 reply_text = response.get("response", "Mee question ardhamaindi. More details kosam support team ni contact avvandi.")
-                bot.send_message(
-                    telegram_id,
-                    reply_text
-                )
 
-                # NOTE: Auto FAQ video sending removed as per client master prompt.
-                # Nisha should reply naturally. Videos can still be sent manually via admin if needed.
+                # Realistic typing delay (5-10 seconds based on reply length)
+                delay = _calc_typing_delay(reply_text)
+                _send_typing(bot, telegram_id, delay)
+
+                bot.send_message(telegram_id, reply_text)
+
+                # If user is asking about registration / VIP join → also send registration video
+                intent = (response.get("intent") or "").upper()
+                text_lower = text.lower()
+                registration_keywords = [
+                    "register", "registration", "vip join", "vip lo", "join avvali",
+                    "link pampu", "how to join", "how to register", "account create",
+                    "registration ela", "vip registration", "join cheyyali"
+                ]
+                wants_registration = intent == "REGISTRATION" or any(k in text_lower for k in registration_keywords)
+
+                if wants_registration:
+                    try:
+                        # Small extra pause then send registration video if available
+                        time.sleep(1.2)
+                        self.video_service.send_faq_video(telegram_id, "REGISTRATION")
+                    except Exception as ve:
+                        logger.warning(f"Could not send registration video to {telegram_id}: {ve}")
 
             except Exception as e:
                 logger.error(f"FAQ handler failed for user {message.from_user.id}: {e}")
-                bot.send_message(
-                    message.from_user.id,
-                    "Sorry, technical difficulty vachindi. Please try again or contact support."
-                )
+                try:
+                    _send_typing(bot, message.from_user.id, 4.0)
+                    bot.send_message(
+                        message.from_user.id,
+                        "Arre, konchem problem ayindi 😅 Malli try cheyyi or support ki message cheyyi."
+                    )
+                except Exception:
+                    pass
 
         @bot.callback_query_handler(func=lambda call: call.data == "faq")
         def faq_callback(call: CallbackQuery):
