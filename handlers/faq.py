@@ -1,6 +1,7 @@
 import logging
 import time
 import random
+import threading
 from telebot import TeleBot
 from telebot.types import Message, CallbackQuery
 from config import config
@@ -10,14 +11,20 @@ from services.video import VideoService
 from services.support import SupportService
 from services.registration import RegistrationService
 from services.onboarding import OnboardingService, ACTIVE_STATES
+from services import promo
 from keyboards import get_start_keyboard, get_back_keyboard
 from utils import sanitize_text
 
 logger = logging.getLogger(__name__)
 
+# Buffer for fragmented messages: wait 10 seconds for more input before processing
+_pending_messages = {}  # telegram_id -> {"texts": [], "timer": Timer, "user": dict}
+_pending_lock = threading.Lock()
+DEBOUNCE_SECONDS = 10
+
 
 def _send_typing(bot: TeleBot, chat_id: int, delay: float = 2.0):
-    """Show realistic typing indicator. Delay based on reply length (5-10s range)."""
+    """Show realistic typing indicator."""
     try:
         bot.send_chat_action(chat_id, "typing")
         time.sleep(delay)
@@ -30,9 +37,7 @@ def _calc_typing_delay(text: str) -> float:
     if not text:
         return 5.0
     length = len(text)
-    # Base 5s + extra based on length, capped at 10s
     delay = 5.0 + min(length / 80.0, 5.0)
-    # Small random variation so it feels human
     delay += random.uniform(-0.5, 0.8)
     return max(5.0, min(delay, 10.0))
 
@@ -50,6 +55,91 @@ class FAQHandler:
         self.support_service = support_service or SupportService(bot)
         self.registration_service = registration_service or RegistrationService(bot)
         self.onboarding_service = onboarding_service or OnboardingService(bot)
+
+    def _process_combined_message(self, telegram_id: int, combined_text: str, user: dict):
+        """Actually process the (possibly combined) user message after debounce."""
+        try:
+            bot = self.bot
+            text = sanitize_text(combined_text)
+            if not text:
+                return
+
+            response = ai_service.generate_response(text, user)
+
+            if response.get("support_needed"):
+                ticket = self.support_service.create_ticket(
+                    telegram_id,
+                    text,
+                    response.get("intent", "SUPPORT")
+                )
+                if ticket and ticket.get("id"):
+                    self.support_service.notify_admin_about_ticket(ticket)
+                reply_text = response.get(
+                    "response",
+                    "I have forwarded your query to the support team. They will get back to you shortly."
+                )
+                delay = _calc_typing_delay(reply_text)
+                _send_typing(bot, telegram_id, delay)
+                bot.send_message(telegram_id, reply_text)
+                return
+
+            reply_text = response.get(
+                "response",
+                "I understood your question. If you need more help, just tell me."
+            )
+
+            delay = _calc_typing_delay(reply_text)
+            _send_typing(bot, telegram_id, delay)
+            bot.send_message(telegram_id, reply_text)
+
+            # If registration intent → send registration video + perfect caption
+            intent = (response.get("intent") or "").upper()
+            text_lower = text.lower()
+            registration_keywords = [
+                "register", "registration", "vip join", "join vip", "how to join",
+                "how to register", "joining link", "registration link", "account create",
+                "vip registration", "want vip", "join the vip"
+            ]
+            wants_registration = intent == "REGISTRATION" or any(k in text_lower for k in registration_keywords)
+
+            if wants_registration:
+                try:
+                    time.sleep(1.0)
+                    promo.send_registration_steps(bot, telegram_id)
+                    # Also try video with perfect caption
+                    from services.promo import send_registration_video
+                    if callable(send_registration_video):
+                        send_registration_video(bot, telegram_id)
+                except Exception as ve:
+                    logger.warning(f"Could not send registration content to {telegram_id}: {ve}")
+                    try:
+                        # Fallback: send video via video service
+                        self.video_service.send_faq_video(telegram_id, "REGISTRATION")
+                    except Exception:
+                        pass
+
+        except Exception as e:
+            logger.error(f"FAQ process failed for user {telegram_id}: {e}")
+            try:
+                _send_typing(self.bot, telegram_id, 4.0)
+                self.bot.send_message(
+                    telegram_id,
+                    "Sorry, something went wrong for a moment. Please try again or message support."
+                )
+            except Exception:
+                pass
+
+    def _flush_pending(self, telegram_id: int):
+        """Called when debounce timer fires — combine buffered texts and process."""
+        with _pending_lock:
+            entry = _pending_messages.pop(telegram_id, None)
+        if not entry:
+            return
+        texts = entry.get("texts") or []
+        user = entry.get("user") or {}
+        combined = " ".join(t.strip() for t in texts if t and t.strip())
+        if combined:
+            self._process_combined_message(telegram_id, combined, user)
 
     def register(self):
         bot = self.bot
@@ -94,60 +184,42 @@ class FAQHandler:
                 if not text:
                     return
 
-                # Generate AI response first
-                response = ai_service.generate_response(text, user)
+                # --- 10 second debounce for fragmented messages ---
+                with _pending_lock:
+                    entry = _pending_messages.get(telegram_id)
+                    if entry:
+                        # Cancel previous timer and append new text
+                        try:
+                            entry["timer"].cancel()
+                        except Exception:
+                            pass
+                        entry["texts"].append(text)
+                        entry["user"] = user
+                    else:
+                        entry = {
+                            "texts": [text],
+                            "user": user,
+                            "timer": None
+                        }
+                        _pending_messages[telegram_id] = entry
 
-                # Support ticket path
-                if response.get("support_needed"):
-                    ticket = self.support_service.create_ticket(
-                        telegram_id,
-                        text,
-                        response.get("intent", "SUPPORT")
+                    timer = threading.Timer(
+                        DEBOUNCE_SECONDS,
+                        self._flush_pending,
+                        args=(telegram_id,)
                     )
-                    if ticket and ticket.get("id"):
-                        self.support_service.notify_admin_about_ticket(ticket)
-                    reply_text = response.get("response", "Mee query support team ki forward chesam. Thvaralo reply istharu.")
-                    delay = _calc_typing_delay(reply_text)
-                    _send_typing(bot, telegram_id, delay)
-                    bot.send_message(telegram_id, reply_text)
-                    return
+                    timer.daemon = True
+                    entry["timer"] = timer
+                    timer.start()
 
-                reply_text = response.get("response", "Mee question ardhamaindi. More details kosam support team ni contact avvandi.")
-
-                # Realistic typing delay (5-10 seconds based on reply length)
-                delay = _calc_typing_delay(reply_text)
-                _send_typing(bot, telegram_id, delay)
-
-                bot.send_message(telegram_id, reply_text)
-
-                # If user is asking about registration / VIP join → also send registration video
-                intent = (response.get("intent") or "").upper()
-                text_lower = text.lower()
-                registration_keywords = [
-                    "register", "registration", "vip join", "vip lo", "join avvali",
-                    "link pampu", "how to join", "how to register", "account create",
-                    "registration ela", "vip registration", "join cheyyali"
-                ]
-                wants_registration = intent == "REGISTRATION" or any(k in text_lower for k in registration_keywords)
-
-                if wants_registration:
-                    try:
-                        # Small extra pause then send registration video if available
-                        time.sleep(1.2)
-                        self.video_service.send_faq_video(telegram_id, "REGISTRATION")
-                    except Exception as ve:
-                        logger.warning(f"Could not send registration video to {telegram_id}: {ve}")
+                # Show typing briefly so user knows bot received something
+                try:
+                    bot.send_chat_action(telegram_id, "typing")
+                except Exception:
+                    pass
 
             except Exception as e:
                 logger.error(f"FAQ handler failed for user {message.from_user.id}: {e}")
-                try:
-                    _send_typing(bot, message.from_user.id, 4.0)
-                    bot.send_message(
-                        message.from_user.id,
-                        "Arre, konchem problem ayindi 😅 Malli try cheyyi or support ki message cheyyi."
-                    )
-                except Exception:
-                    pass
 
         @bot.callback_query_handler(func=lambda call: call.data == "faq")
         def faq_callback(call: CallbackQuery):
@@ -158,7 +230,7 @@ class FAQHandler:
                     pass
                 bot.send_message(
                     call.from_user.id,
-                    "❓ FAQ Assistant\n\nMee doubts edaina ikkada type cheyandi (Registration, Deposits, Withdrawals, Signals, etc.), nenu help chestha! 😊",
+                    "You can ask me anything about registration, deposits, withdrawals, courses, or access. Just type your question here 😊",
                     reply_markup=get_back_keyboard("back_to_main")
                 )
             except Exception as e:
@@ -173,7 +245,7 @@ class FAQHandler:
                     pass
                 bot.send_message(
                     call.from_user.id,
-                    "Thank you! Feel free to ask anytime if you need help. 🙏"
+                    "Thank you! Feel free to ask anytime if you need help."
                 )
             except Exception as e:
                 logger.error(f"End FAQ callback failed: {e}")
