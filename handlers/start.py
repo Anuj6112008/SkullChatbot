@@ -83,7 +83,7 @@ def register_start_handlers(
                 _send_typing(bot, telegram_id, 1.8)
                 bot.send_message(
                     telegram_id,
-                    "Mee registration inka process lo undi. Let's continue where we left off!"
+                    "Your registration is still in progress. Let's continue from where we left off!"
                 )
                 return
 
@@ -96,22 +96,22 @@ def register_start_handlers(
                 _send_typing(bot, telegram_id, 2.5)
                 bot.send_message(
                     telegram_id,
-                    "Heyy! 👋 Nenu Nisha, Team Skull nunchi.\n\n"
-                    "Skull Trading Group lo join avvalante mundu maa Free Channel lo join request pettandi:\n\n"
+                    "Hey! 👋 I'm Nisha from Team Skull.\n\n"
+                    "To continue with VIP, please first join our Free Channel using the link below and send a join request:\n\n"
                     f"👉 {free_link}\n\n"
-                    "Join request approve aipoyaka nenu ikkade help chestha VIP onboarding kosam 😊"
+                    "Once your join request is approved, I will help you with VIP registration here 😊"
                 )
                 return
 
             # 4. Start Onboarding directly with Nisha ☺️ and typing pauses
             _send_typing(bot, telegram_id, 2.2)
-            bot.send_message(telegram_id, "Hello, Im Nisha ☺️ From Skull Support Team")
+            bot.send_message(telegram_id, "Hello! I'm Nisha ☺️ from Team Skull")
 
             _send_typing(bot, telegram_id, 2.2)
-            bot.send_message(telegram_id, "Indake mee Joining request Accept chesa")
+            bot.send_message(telegram_id, "I just accepted your joining request.")
 
             _send_typing(bot, telegram_id, 1.8)
-            bot.send_message(telegram_id, "Meeku Trading experience unda?")
+            bot.send_message(telegram_id, "Do you have any trading experience?")
 
             onboarding_service.set_state(telegram_id, STATE_AWAITING_EXPERIENCE)
 
