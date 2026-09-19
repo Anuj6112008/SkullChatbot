@@ -12,7 +12,7 @@ from utils import get_current_timestamp
 logger = logging.getLogger(__name__)
 
 
-def _send_typing(bot: TeleBot, chat_id: int, delay: float = 1.5):
+def _send_typing(bot: TeleBot, chat_id: int, delay: float = 2.0):
     """Show realistic 'typing...' indicator in chat header before sending message."""
     try:
         bot.send_chat_action(chat_id, "typing")
