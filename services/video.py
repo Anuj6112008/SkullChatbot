@@ -152,18 +152,18 @@ class VideoService:
         # Updated fallbacks - natural Roman Telugu + English (no robotic "General information..." messages)
         # These are only used if a video is missing. Prefer pure AI replies as per master prompt.
         default_messages = {
-            "REGISTRATION": "Registration simple undi 😊\n\n• Step 1: Link open chesi new trading account create cheyyi\n• Step 2: 50% deposit bonus available (platform terms apply)\n• Step 3: Minimum $50 deposit cheyyi\n• Step 4: Account ID ikkade send cheyyi\n• Step 5: Verification tarvata VIP lo add chestham",
-            "DEPOSIT": "Deposit process simple undi. Minimum $50 deposit chesi account ID pampu.",
-            "WITHDRAWAL": "Withdrawal details kosam support team ni reach avvandi, they will guide you.",
-            "PAYMENT": "Payment methods platform lo available unnai. Stuck ayithe ikkade cheppu.",
-            "COURSE": "VIP courses access verification tarvata vastayi. Account ID share chesi complete cheyyi.",
-            "ACCESS": "Access verification tarvata open avtundi. Account ID pampandi verification kosam.",
-            "LOGIN": "Login issue unte credentials check cheyyi. Help kavali ante support ki message cheyyi.",
-            "ACCOUNT": "Account details share chesthe verification process start chestham.",
-            "GENERAL": "Emaina doubt undi ante clearly cheppu, nenu help chestha 😊",
-            "SUPPORT": "Support team ki forward chesthunna. Thvaralo reply istharu."
+            "REGISTRATION": "Please complete your VIP registration using the joining link and the 5 steps shared. If you need help with any step, just tell me.",
+            "DEPOSIT": "Deposit at least $50 after creating your account through the joining link. Then share your account ID here.",
+            "WITHDRAWAL": "For withdrawal details, please contact the support team. They will guide you.",
+            "PAYMENT": "Payment methods are available on the platform. If you get stuck, just message me here.",
+            "COURSE": "VIP courses become available after verification. Share your account ID to complete the process.",
+            "ACCESS": "Access opens after verification. Please send your account ID so we can process it.",
+            "LOGIN": "Please check your login credentials. If you need help, message support.",
+            "ACCOUNT": "Share your account details so we can start the verification process.",
+            "GENERAL": "If you have any doubt, just tell me clearly. I am here to help 😊",
+            "SUPPORT": "I have forwarded this to the support team. They will reply shortly."
         }
-        fallback = default_messages.get(intent, "Emaina specific doubt undi ante cheppu, help chestha 😊")
+        fallback = default_messages.get(intent, "If you have a specific doubt, just tell me. I will help you 😊")
         return self.send_video_with_fallback(chat_id, intent, fallback)
 
     def get_available_intents(self) -> list:
