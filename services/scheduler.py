@@ -21,7 +21,7 @@ from utils import get_current_datetime, get_current_timestamp
 logger = logging.getLogger(__name__)
 
 # TESTING DELAYS: 1st Nudge at 5m, 2nd Nudge at +10m, 3rd at +15m...
-DAY1_DELAYS_MIN = [5, 10, 30, 60, 120, 300, 600]
+DAY1_DELAYS_MIN = [5, 15, 45, 120, 300, 720]
 
 
 def _get_scheduler_tz():
@@ -64,7 +64,7 @@ class SchedulerService:
         # Use test delays
         self.day1_delays = DAY1_DELAYS_MIN
         self.day2_per_day = 2
-        self.idle_minutes = 2  # Considers idle after 2 minutes for testing
+        self.idle_minutes = 5  # Idle after 5 minutes
 
     def start(self):
         if self.running:
