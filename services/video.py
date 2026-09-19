@@ -152,7 +152,7 @@ class VideoService:
         # Updated fallbacks - natural Roman Telugu + English (no robotic "General information..." messages)
         # These are only used if a video is missing. Prefer pure AI replies as per master prompt.
         default_messages = {
-            "REGISTRATION": "Registration complete chesi account ID share cheyyi, nenu help chestha 😊",
+            "REGISTRATION": "Registration simple undi 😊\n\n• Step 1: Link open chesi new trading account create cheyyi\n• Step 2: 50% deposit bonus available (platform terms apply)\n• Step 3: Minimum $50 deposit cheyyi\n• Step 4: Account ID ikkade send cheyyi\n• Step 5: Verification tarvata VIP lo add chestham",
             "DEPOSIT": "Deposit process simple undi. Minimum $50 deposit chesi account ID pampu.",
             "WITHDRAWAL": "Withdrawal details kosam support team ni reach avvandi, they will guide you.",
             "PAYMENT": "Payment methods platform lo available unnai. Stuck ayithe ikkade cheppu.",
