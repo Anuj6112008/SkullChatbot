@@ -35,7 +35,7 @@ STOPWORDS = {
 }
 
 
-def _send_typing(bot: TeleBot, chat_id: int, delay: float = 1.5):
+def _send_typing(bot: TeleBot, chat_id: int, delay: float = 2.0):
     """Show realistic 'typing...' indicator in chat header for 1.5 seconds before message."""
     try:
         bot.send_chat_action(chat_id, "typing")
