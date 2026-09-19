@@ -158,7 +158,7 @@ class AIService:
 
             if intent == "SUPPORT" or (intent == "GENERAL" and self.is_support_question(message)):
                 result["support_needed"] = True
-                result["response"] = "Mee query support team ki forward chesthunna. Thvaralo maa team meeku help chestharu."
+                result["response"] = "I have forwarded your query to the support team. They will help you shortly."
                 return result
 
             system_prompt = self.system_prompt
@@ -193,14 +193,14 @@ class AIService:
             response_text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             result["response"] = sanitize_text(response_text)
             if not result["response"]:
-                result["response"] = "Mee doubt ardhamaindi. More details kosam support team ni reach avvandi."
+                result["response"] = "I understood your question. For more details you can also contact support."
             return result
         except Exception as e:
             logger.error(f"AI response generation failed: {e}")
             # Soft fallback - never show "technical issue" for normal chat
             return {
                 "intent": "GENERAL",
-                "response": "Arre, konchem slow ga undi 😅 Malli cheppu, nenu help chestha.",
+                "response": "Sorry, that took a moment 😅 Please say that again, I am here to help.",
                 "video": None,
                 "caption": None,
                 "support_needed": False,
