@@ -70,7 +70,7 @@ def register_start_handlers(
 
             # 1. If user is already an approved VIP member
             if user_data and user_data.get("verification_status") == "approved":
-                _send_typing(bot, telegram_id, 1.2)
+                _send_typing(bot, telegram_id, 1.8)
                 bot.send_message(
                     telegram_id,
                     "Welcome back! You are an active VIP member. Feel free to ask any questions or reach out to support.",
@@ -80,7 +80,7 @@ def register_start_handlers(
 
             # 2. If user is already in the middle of registration
             if current_state in ACTIVE_STATES and current_state != STATE_AWAITING_EXPERIENCE:
-                _send_typing(bot, telegram_id, 1.2)
+                _send_typing(bot, telegram_id, 1.8)
                 bot.send_message(
                     telegram_id,
                     "Mee registration inka process lo undi. Let's continue where we left off!"
@@ -93,23 +93,30 @@ def register_start_handlers(
 
             if not is_member:
                 free_link = config.get_free_channel_link() or "https://t.me/+3zlZ8oTobb5lODc9"
-                _send_typing(bot, telegram_id, 1.5)
+                _send_typing(bot, telegram_id, 2.5)
                 bot.send_message(
                     telegram_id,
-                    "Hello! 👋 Skull Trading Group lo participate cheyadaniki, mundu ga kinda link dwara maa Free Channel lo Join Request pettandi:\n\n"
-                    f"👉 {free_link}\n\n"
-                    "Mee join request approve avvagane, mana VIP onboarding start avthundi! 😊"
+                    "Heyy! 👋 Nenu Nisha, Team Skull nunchi.
+
+"
+                    "Skull Trading Group lo join avvalante mundu maa Free Channel lo join request pettandi:
+
+"
+                    f"👉 {free_link}
+
+"
+                    "Join request approve aipoyaka nenu ikkade help chestha VIP onboarding kosam 😊"
                 )
                 return
 
             # 4. Start Onboarding directly with Nisha ☺️ and typing pauses
-            _send_typing(bot, telegram_id, 1.5)
+            _send_typing(bot, telegram_id, 2.2)
             bot.send_message(telegram_id, "Hello, Im Nisha ☺️ From Skull Support Team")
 
-            _send_typing(bot, telegram_id, 1.5)
+            _send_typing(bot, telegram_id, 2.2)
             bot.send_message(telegram_id, "Indake mee Joining request Accept chesa")
 
-            _send_typing(bot, telegram_id, 1.2)
+            _send_typing(bot, telegram_id, 1.8)
             bot.send_message(telegram_id, "Meeku Trading experience unda?")
 
             onboarding_service.set_state(telegram_id, STATE_AWAITING_EXPERIENCE)
@@ -127,7 +134,7 @@ def register_start_handlers(
             if user_data.get("verification_status") == "approved":
                 bot.send_message(telegram_id, "You are already registered and verified! ✅")
                 return
-            _send_typing(bot, telegram_id, 1.0)
+            _send_typing(bot, telegram_id, 1.5)
             bot.send_message(
                 telegram_id,
                 "📝 Registration\n\nPlease enter your trading account ID:",
@@ -154,7 +161,7 @@ def register_start_handlers(
         try:
             telegram_id = call.from_user.id
             support_service.set_awaiting_support(telegram_id)
-            _send_typing(bot, telegram_id, 1.0)
+            _send_typing(bot, telegram_id, 1.5)
             bot.send_message(
                 telegram_id,
                 "🆘 Support\n\nPlease describe your issue in your next message and I'll create a support ticket.",
