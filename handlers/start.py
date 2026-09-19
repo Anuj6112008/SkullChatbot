@@ -96,15 +96,9 @@ def register_start_handlers(
                 _send_typing(bot, telegram_id, 2.5)
                 bot.send_message(
                     telegram_id,
-                    "Heyy! 👋 Nenu Nisha, Team Skull nunchi.
-
-"
-                    "Skull Trading Group lo join avvalante mundu maa Free Channel lo join request pettandi:
-
-"
-                    f"👉 {free_link}
-
-"
+                    "Heyy! 👋 Nenu Nisha, Team Skull nunchi.\n\n"
+                    "Skull Trading Group lo join avvalante mundu maa Free Channel lo join request pettandi:\n\n"
+                    f"👉 {free_link}\n\n"
                     "Join request approve aipoyaka nenu ikkade help chestha VIP onboarding kosam 😊"
                 )
                 return
