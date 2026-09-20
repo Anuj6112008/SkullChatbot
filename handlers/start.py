@@ -25,6 +25,26 @@ def _send_typing(bot: TeleBot, chat_id: int, delay: float = 1.5):
         pass
 
 
+def _check_user_membership(bot: TeleBot, channel_service: ChannelService, telegram_id: int, channel_id: int) -> bool:
+    """Safely check if user is in channel using available methods or direct bot API."""
+    if not channel_id:
+        return True
+    try:
+        if hasattr(channel_service, "is_user_in_channel"):
+            return channel_service.is_user_in_channel(telegram_id, channel_id)
+        if hasattr(channel_service, "is_member"):
+            return channel_service.is_member(telegram_id, channel_id)
+        if hasattr(channel_service, "check_membership"):
+            return channel_service.check_membership(telegram_id, channel_id)
+        
+        # Direct TeleBot fallback
+        member = bot.get_chat_member(channel_id, telegram_id)
+        return member.status in ["member", "administrator", "creator", "restricted"]
+    except Exception as e:
+        logger.warning(f"Could not check membership for {telegram_id} in {channel_id}: {e}")
+        return True  # Allow user to proceed if channel check fails
+
+
 def register_start_handlers(
     bot: TeleBot,
     registration_service: RegistrationService = None,
@@ -88,23 +108,27 @@ def register_start_handlers(
                 )
                 return
 
-            # 3. Check if user has joined or requested the dynamic Free Channel
-            target_free_channel_id = int(config.get_free_channel_id()) if config.get_free_channel_id() else int(config.FREE_CHANNEL_ID)
-            is_member = channel_service.is_user_in_channel(telegram_id, target_free_channel_id)
+            # 3. Check Free Channel requirement if configured
+            try:
+                target_free_channel_id = int(config.get_free_channel_id()) if hasattr(config, "get_free_channel_id") and config.get_free_channel_id() else getattr(config, "FREE_CHANNEL_ID", None)
+                if target_free_channel_id:
+                    target_free_channel_id = int(target_free_channel_id)
+                    is_member = _check_user_membership(bot, channel_service, telegram_id, target_free_channel_id)
+                    if not is_member:
+                        free_link = config.get_free_channel_link() if hasattr(config, "get_free_channel_link") else "https://t.me/+3zlZ8oTobb5lODc9"
+                        _send_typing(bot, telegram_id, 2.0)
+                        bot.send_message(
+                            telegram_id,
+                            "Hey! 👋 I'm Nisha from Team Skull.\n\n"
+                            "To continue with VIP, please first join our Free Channel using the link below and send a join request:\n\n"
+                            f"👉 {free_link}\n\n"
+                            "Once your join request is approved, I will help you with VIP registration here 😊"
+                        )
+                        return
+            except Exception as ce:
+                logger.warning(f"Free channel check bypassed due to: {ce}")
 
-            if not is_member:
-                free_link = config.get_free_channel_link() or "https://t.me/+3zlZ8oTobb5lODc9"
-                _send_typing(bot, telegram_id, 2.5)
-                bot.send_message(
-                    telegram_id,
-                    "Hey! 👋 I'm Nisha from Team Skull.\n\n"
-                    "To continue with VIP, please first join our Free Channel using the link below and send a join request:\n\n"
-                    f"👉 {free_link}\n\n"
-                    "Once your join request is approved, I will help you with VIP registration here 😊"
-                )
-                return
-
-            # 4. Direct Start Message
+            # 4. Direct Start Message (Nisha VIP Greeting)
             _send_typing(bot, telegram_id, 1.5)
             greeting_msg = (
                 f"HI {display_name}, I AM NISHA FROM SKULL SUPPORT TEAM "
@@ -113,7 +137,11 @@ def register_start_handlers(
             bot.send_message(telegram_id, greeting_msg)
 
         except Exception as e:
-            logger.error(f"Start command failed for user {message.from_user.id}: {e}")
+            logger.error(f"Start command failed for user {message.from_user.id}: {e}", exc_info=True)
+            bot.send_message(
+                message.chat.id,
+                "HI, I AM NISHA FROM SKULL SUPPORT TEAM WRITE VIP AND SEND US TO CONTINUE THE CHAT"
+            )
 
     @bot.callback_query_handler(func=lambda call: call.data == "start_registration")
     def start_registration_callback(call: CallbackQuery):
