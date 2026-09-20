@@ -2,7 +2,6 @@ import os
 import logging
 import time
 from telebot import TeleBot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import config
 from database import database
 from utils import get_current_timestamp
@@ -17,26 +16,57 @@ class RegistrationService:
     def __init__(self, bot: TeleBot):
         self.bot = bot
 
+    def is_awaiting_account_id(self, telegram_id: int) -> bool:
+        """Check if user is currently awaiting account ID submission."""
+        try:
+            user = database.get_user(telegram_id)
+            if user:
+                return user.get("onboarding_state") == STATE_AWAITING_ACCOUNT_ID
+            return False
+        except Exception:
+            return False
+
+    def is_in_registration(self, telegram_id: int) -> bool:
+        """Check if user is currently in active registration."""
+        try:
+            user = database.get_user(telegram_id)
+            if user:
+                status = user.get("registration_status")
+                state = user.get("onboarding_state")
+                return status == "pending_verification" or state == STATE_AWAITING_ACCOUNT_ID
+            return False
+        except Exception:
+            return False
+
     def get_registration_link(self) -> str:
         """Fetch registration link dynamically from database settings, fallback to config."""
         try:
             db_link = database.get_setting("registration_link")
-            if db_link and str(db_link).strip():
-                return str(db_link).strip()
+            if db_link:
+                val = db_link.get("value") if isinstance(db_link, dict) else db_link
+                if val and str(val).strip():
+                    return str(val).strip()
         except Exception as e:
             logger.warning(f"Could not fetch registration link from DB: {e}")
 
-        # Fallback to config if available
+        if hasattr(config, "get_joining_link"):
+            val = config.get_joining_link()
+            if val:
+                return val
         if hasattr(config, "get_registration_link"):
-            return config.get_registration_link()
+            val = config.get_registration_link()
+            if val:
+                return val
         return getattr(config, "REGISTRATION_LINK", "https://u3.shortink.io/register?utm_campaign=860595&utm_source=affiliate&utm_medium=sr&a=JP2W2GnQq591r7&al=1786780&ac=skull&cid=973092&code=50START")
 
     def get_registration_video_source(self):
         """Fetch registration video ID or URL dynamically from database settings."""
         try:
             db_video = database.get_setting("registration_video_source")
-            if db_video and str(db_video).strip():
-                return str(db_video).strip()
+            if db_video:
+                val = db_video.get("value") if isinstance(db_video, dict) else db_video
+                if val and str(val).strip():
+                    return str(val).strip()
         except Exception as e:
             logger.warning(f"Could not fetch registration video source from DB: {e}")
 
@@ -72,10 +102,10 @@ class RegistrationService:
         caption = self.get_registration_caption()
         video_source = self.get_registration_video_source()
 
-        # Show typing / upload action
+        # Show typing action
         try:
             self.bot.send_chat_action(chat_id, "upload_video")
-            time.sleep(1.0)
+            time.sleep(0.8)
         except Exception:
             pass
 
@@ -85,7 +115,8 @@ class RegistrationService:
                 self.bot.send_video(
                     chat_id=chat_id,
                     video=video_source,
-                    caption=caption
+                    caption=caption,
+                    supports_streaming=True
                 )
                 self.set_registration_state(chat_id, STATE_AWAITING_ACCOUNT_ID)
                 return
@@ -98,21 +129,27 @@ class RegistrationService:
             "media/registration_video.mp4",
             "assets/registration.mp4"
         ]
+        if hasattr(config, "get_registration_video_path"):
+            p = config.get_registration_video_path()
+            if p:
+                local_video_paths.insert(0, p)
+
         for path in local_video_paths:
-            if os.path.exists(path):
+            if path and os.path.exists(path):
                 try:
                     with open(path, "rb") as vf:
                         self.bot.send_video(
                             chat_id=chat_id,
                             video=vf,
-                            caption=caption
+                            caption=caption,
+                            supports_streaming=True
                         )
                     self.set_registration_state(chat_id, STATE_AWAITING_ACCOUNT_ID)
                     return
                 except Exception as e:
                     logger.warning(f"Failed to send local video file {path}: {e}")
 
-        # 3. Fallback to clean formatted text message if video stream is unavailable
+        # 3. Fallback to text message
         try:
             self.bot.send_message(
                 chat_id=chat_id,
