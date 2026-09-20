@@ -47,26 +47,23 @@ REENGAGEMENT_TEXT = (
 )
 
 REGISTRATION_STEPS_CAPTION = (
-    "🔥 JOIN THE VIP COMMUNITY 🔥\n\n"
-    "Follow these 5 simple steps 👇\n\n"
-    "🔗 JOINING LINK\n"
+    "🔥 𝗝𝗢𝗜𝗡 𝗧𝗛𝗘 𝗩𝗜𝗣 𝗖𝗢𝗠𝗠𝗨𝗡𝗜𝗧𝗬 🔥\n\n"
+    "𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗲 𝘁𝗵𝗲𝘀𝗲 𝟱 𝘀𝗶𝗺𝗽𝗹𝗲 𝘀𝘁𝗲𝗽𝘀 👇\n\n"
+    "🔗 𝗝𝗢𝗜𝗡𝗜𝗡𝗚 𝗟𝗜𝗡𝗞\n"
     "{link}\n\n"
-    "━━━━━━━━━━━━━━━━━━\n\n"
-    "🟢 STEP 1 — CREATE ACCOUNT\n"
-    "Open a new trading account using the link above.\n\n"
-    "🎁 STEP 2 — GET BONUS\n"
-    "Get 50% deposit bonus automatically (platform terms apply).\n\n"
-    "💵 STEP 3 — DEPOSIT\n"
-    "Deposit at least $50 to continue.\n\n"
-    "🆔 STEP 4 — SEND ACCOUNT ID\n"
-    "Send your trading account ID here\n"
-    "Example: 12355426789\n"
-    "We will verify and approve it.\n\n"
-    "👑 STEP 5 — ENTER VIP\n"
-    "After verification you get VIP access + exclusive resources.\n\n"
-    "━━━━━━━━━━━━━━━━━━\n\n"
-    "⚡ Complete all 5 steps to activate VIP access\n\n"
-    "💬 Need help? Message me here."
+    "𝟭️⃣ 𝗖𝗥𝗘𝗔𝗧𝗘 𝗔𝗖𝗖𝗢𝗨𝗡𝗧\n"
+    "Register a new trading account using the link above. 📝\n\n"
+    "𝟮️⃣ 𝗚𝗘𝗧 𝟱𝟬% 𝗕𝗢𝗡𝗨𝗦 🎁\n"
+    "Use the joining link to receive a 𝟱𝟬% deposit bonus, subject to platform terms.\n\n"
+    "𝟯️⃣ 𝗗𝗘𝗣𝗢𝗦𝗜𝗧 $𝟱𝟬+ 💵\n"
+    "Make a minimum deposit of $𝟱𝟬.\n\n"
+    "𝟰️⃣ 𝗦𝗘𝗡𝗗 𝗔𝗖𝗖𝗢𝗨𝗡𝗧 𝗜𝗗 🆔\n"
+    "Send your 𝟵-𝗱𝗶𝗴𝗶𝘁 trading account ID for manual verification. ✅\n\n"
+    "𝗘𝘅𝗮𝗺𝗽𝗹𝗲: 𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵\n\n"
+    "𝟱️⃣ 𝗝𝗢𝗜𝗡 𝗩𝗜𝗣 👑\n"
+    "Once verified, you’ll be added to the 𝗩𝗜𝗣 𝗖𝗼𝗺𝗺𝘂𝗻𝗶𝘁𝘆.\n\n"
+    "💬 𝗡𝗘𝗘𝗗 𝗛𝗘𝗟𝗣?\n"
+    "Message me here!"
 )
 
 FINAL_NOTE = (
@@ -335,7 +332,6 @@ def send_registration_video(bot: TeleBot, telegram_id: int):
             bot.send_message(telegram_id, caption)
         except Exception:
             pass
-
 
 
 def send_registration_steps(bot: TeleBot, telegram_id: int):
