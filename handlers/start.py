@@ -46,6 +46,7 @@ def register_start_handlers(
             username = user.username
             first_name = user.first_name
             last_name = user.last_name
+            display_name = (first_name or username or "TRADER").upper()
 
             user_data = database.get_user(telegram_id)
             if not user_data:
@@ -103,17 +104,13 @@ def register_start_handlers(
                 )
                 return
 
-            # 4. Start Onboarding directly with Nisha ☺️ and typing pauses
-            _send_typing(bot, telegram_id, 2.2)
-            bot.send_message(telegram_id, "Hello! I'm Nisha ☺️ from Team Skull")
-
-            _send_typing(bot, telegram_id, 2.2)
-            bot.send_message(telegram_id, "I just accepted your joining request.")
-
-            _send_typing(bot, telegram_id, 1.8)
-            bot.send_message(telegram_id, "Do you have any trading experience?")
-
-            onboarding_service.set_state(telegram_id, STATE_AWAITING_EXPERIENCE)
+            # 4. Direct Start Message
+            _send_typing(bot, telegram_id, 1.5)
+            greeting_msg = (
+                f"HI {display_name}, I AM NISHA FROM SKULL SUPPORT TEAM "
+                f"WRITE VIP AND SEND US TO CONTINUE THE CHAT"
+            )
+            bot.send_message(telegram_id, greeting_msg)
 
         except Exception as e:
             logger.error(f"Start command failed for user {message.from_user.id}: {e}")
