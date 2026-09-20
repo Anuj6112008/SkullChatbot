@@ -1,6 +1,7 @@
 import logging
 import time
 import random
+import re
 import threading
 from telebot import TeleBot
 from telebot.types import Message, CallbackQuery
@@ -12,8 +13,9 @@ from services.support import SupportService
 from services.registration import RegistrationService
 from services.onboarding import OnboardingService, ACTIVE_STATES
 from services import promo
+from services.verification import VerificationService
 from keyboards import get_start_keyboard, get_back_keyboard
-from utils import sanitize_text
+from utils import sanitize_text, get_current_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ _pending_lock = threading.Lock()
 DEBOUNCE_SECONDS = 10
 
 
-def _send_typing(bot: TeleBot, chat_id: int, delay: float = 2.0):
+def _send_typing(bot: TeleBot, chat_id: int, delay: float = 1.5):
     """Show realistic typing indicator."""
     try:
         bot.send_chat_action(chat_id, "typing")
@@ -33,13 +35,32 @@ def _send_typing(bot: TeleBot, chat_id: int, delay: float = 2.0):
 
 
 def _calc_typing_delay(text: str) -> float:
-    """Calculate realistic typing delay based on reply length (5 to 10 seconds)."""
+    """Typing delay 3–8 seconds based on reply length (target ~10s max total feel)."""
     if not text:
-        return 5.0
+        return 3.5
     length = len(text)
-    delay = 5.0 + min(length / 80.0, 5.0)
-    delay += random.uniform(-0.5, 0.8)
-    return max(5.0, min(delay, 10.0))
+    delay = 3.0 + min(length / 100.0, 4.5)
+    delay += random.uniform(-0.3, 0.5)
+    return max(3.0, min(delay, 8.0))
+
+
+def _looks_like_account_id(text: str) -> str | None:
+    """If message is primarily a trading account ID (7-12 digits), return the digits."""
+    if not text:
+        return None
+    cleaned = re.sub(r"[\s\-#]", "", text.strip())
+    # Pure digits 7-12 length
+    if cleaned.isdigit() and 7 <= len(cleaned) <= 12:
+        return cleaned
+    # "account id 123456789" style
+    m = re.search(r"(?:account\s*id|id|acc(?:ount)?)\s*[:\-]?\s*(\d{7,12})", text, re.I)
+    if m:
+        return m.group(1)
+    # Standalone long number in short message
+    m2 = re.search(r"\b(\d{8,12})\b", text)
+    if m2 and len(text) < 40:
+        return m2.group(1)
+    return None
 
 
 class FAQHandler:
@@ -55,22 +76,79 @@ class FAQHandler:
         self.support_service = support_service or SupportService(bot)
         self.registration_service = registration_service or RegistrationService(bot)
         self.onboarding_service = onboarding_service or OnboardingService(bot)
+        self.verification_service = VerificationService(bot)
+
+    def _submit_account_id(self, telegram_id: int, account_id: str, user: dict):
+        """Submit trading account ID to VIP approval even if user started directly."""
+        bot = self.bot
+        try:
+            if user.get("verification_status") == "approved":
+                _send_typing(bot, telegram_id, 2.0)
+                bot.send_message(telegram_id, "You are already a verified VIP member! ✅")
+                return
+
+            if user.get("registration_status") == "pending_verification":
+                _send_typing(bot, telegram_id, 2.0)
+                bot.send_message(
+                    telegram_id,
+                    "Your registration is already pending verification. Please wait for admin approval. ⏳"
+                )
+                return
+
+            registration_data = {
+                "telegram_id": telegram_id,
+                "registration_data": {
+                    "trading_account_id": account_id,
+                    "full_name": user.get("first_name") or "",
+                    "username": user.get("username") or "",
+                    "source": "direct_chat"
+                },
+                "verification_status": "pending"
+            }
+            registration = database.create_registration(registration_data)
+            database.update_user(telegram_id, {
+                "registration_status": "pending_verification",
+                "last_activity": get_current_timestamp()
+            })
+
+            _send_typing(bot, telegram_id, 2.5)
+            bot.send_message(
+                telegram_id,
+                "✅ Got your Account ID!\n\n"
+                "Your registration is now pending verification.\n"
+                "You will be notified once an admin reviews it."
+            )
+
+            if registration:
+                try:
+                    self.verification_service.notify_admin_about_registration(registration)
+                except Exception as ne:
+                    logger.error(f"Failed to notify admin for direct registration {telegram_id}: {ne}")
+
+            logger.info(f"Direct account ID submitted by {telegram_id}: {account_id}")
+        except Exception as e:
+            logger.error(f"Direct account ID submit failed for {telegram_id}: {e}")
+            bot.send_message(telegram_id, "Something went wrong while submitting your ID. Please try again.")
 
     def _process_combined_message(self, telegram_id: int, combined_text: str, user: dict):
-        """Actually process the (possibly combined) user message after debounce."""
+        """Process the (possibly combined) user message after debounce."""
         try:
             bot = self.bot
             text = sanitize_text(combined_text)
             if not text:
                 return
 
+            # If message looks like trading account ID → submit to VIP approval
+            account_id = _looks_like_account_id(text)
+            if account_id:
+                self._submit_account_id(telegram_id, account_id, user)
+                return
+
             response = ai_service.generate_response(text, user)
 
             if response.get("support_needed"):
                 ticket = self.support_service.create_ticket(
-                    telegram_id,
-                    text,
-                    response.get("intent", "SUPPORT")
+                    telegram_id, text, response.get("intent", "SUPPORT")
                 )
                 if ticket and ticket.get("id"):
                     self.support_service.notify_admin_about_ticket(ticket)
@@ -88,49 +166,44 @@ class FAQHandler:
                 "I understood your question. If you need more help, just tell me."
             )
 
-            delay = _calc_typing_delay(reply_text)
-            _send_typing(bot, telegram_id, delay)
-            bot.send_message(telegram_id, reply_text)
-
-            # If registration intent → send registration video + perfect caption
+            # Detect registration intent
             intent = (response.get("intent") or "").upper()
             text_lower = text.lower()
             registration_keywords = [
                 "register", "registration", "vip join", "join vip", "how to join",
                 "how to register", "joining link", "registration link", "account create",
-                "vip registration", "want vip", "join the vip"
+                "vip registration", "want vip", "join the vip", "vip process", "vip steps"
             ]
             wants_registration = intent == "REGISTRATION" or any(k in text_lower for k in registration_keywords)
 
             if wants_registration:
-                try:
-                    time.sleep(1.0)
-                    promo.send_registration_steps(bot, telegram_id)
-                    # Also try video with perfect caption
-                    from services.promo import send_registration_video
-                    if callable(send_registration_video):
-                        send_registration_video(bot, telegram_id)
-                except Exception as ve:
-                    logger.warning(f"Could not send registration content to {telegram_id}: {ve}")
-                    try:
-                        # Fallback: send video via video service
-                        self.video_service.send_faq_video(telegram_id, "REGISTRATION")
-                    except Exception:
-                        pass
+                # Short intro only if AI didn't already give the link; then video with perfect caption ONCE
+                short_reply = "Sure! Here is the complete VIP registration process with video 👇"
+                delay = _calc_typing_delay(short_reply)
+                _send_typing(bot, telegram_id, delay)
+                bot.send_message(telegram_id, short_reply)
+                time.sleep(0.8)
+                # Single call → video + perfect caption only (no plain text template)
+                promo.send_registration_steps(bot, telegram_id)
+                return
+
+            # Normal AI reply
+            delay = _calc_typing_delay(reply_text)
+            _send_typing(bot, telegram_id, delay)
+            bot.send_message(telegram_id, reply_text)
 
         except Exception as e:
             logger.error(f"FAQ process failed for user {telegram_id}: {e}")
             try:
-                _send_typing(self.bot, telegram_id, 4.0)
+                _send_typing(self.bot, telegram_id, 3.0)
                 self.bot.send_message(
                     telegram_id,
-                    "Sorry, something went wrong for a moment. Please try again or message support."
+                    "Sorry, something went wrong for a moment. Please try again."
                 )
             except Exception:
                 pass
 
     def _flush_pending(self, telegram_id: int):
-        """Called when debounce timer fires — combine buffered texts and process."""
         with _pending_lock:
             entry = _pending_messages.pop(telegram_id, None)
         if not entry:
@@ -151,11 +224,9 @@ class FAQHandler:
 
             if self.onboarding_service.is_in_onboarding(telegram_id):
                 return False
-
             state = self.onboarding_service.get_state(telegram_id)
             if state in ACTIVE_STATES:
                 return False
-
             if self.registration_service.is_awaiting_account_id(telegram_id):
                 return False
             if self.registration_service.is_in_registration(telegram_id):
@@ -164,7 +235,6 @@ class FAQHandler:
                 return False
             if self.onboarding_service.is_pending_rejection(telegram_id):
                 return False
-
             return True
 
         @bot.message_handler(func=is_faq_eligible)
@@ -184,11 +254,10 @@ class FAQHandler:
                 if not text:
                     return
 
-                # --- 10 second debounce for fragmented messages ---
+                # 10 second debounce for fragmented messages
                 with _pending_lock:
                     entry = _pending_messages.get(telegram_id)
                     if entry:
-                        # Cancel previous timer and append new text
                         try:
                             entry["timer"].cancel()
                         except Exception:
@@ -196,11 +265,7 @@ class FAQHandler:
                         entry["texts"].append(text)
                         entry["user"] = user
                     else:
-                        entry = {
-                            "texts": [text],
-                            "user": user,
-                            "timer": None
-                        }
+                        entry = {"texts": [text], "user": user, "timer": None}
                         _pending_messages[telegram_id] = entry
 
                     timer = threading.Timer(
@@ -212,7 +277,6 @@ class FAQHandler:
                     entry["timer"] = timer
                     timer.start()
 
-                # Show typing briefly so user knows bot received something
                 try:
                     bot.send_chat_action(telegram_id, "typing")
                 except Exception:
@@ -243,10 +307,7 @@ class FAQHandler:
                     bot.answer_callback_query(call.id)
                 except Exception:
                     pass
-                bot.send_message(
-                    call.from_user.id,
-                    "Thank you! Feel free to ask anytime if you need help."
-                )
+                bot.send_message(call.from_user.id, "Thank you! Feel free to ask anytime if you need help.")
             except Exception as e:
                 logger.error(f"End FAQ callback failed: {e}")
 
