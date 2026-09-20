@@ -259,7 +259,6 @@ def send_registration_video(bot: TeleBot, telegram_id: int):
     """Send registration video with perfect caption. Always tries local file as reliable fallback."""
     link = config.get_joining_link() or "(link not configured)"
     caption = REGISTRATION_STEPS_CAPTION.format(link=link)
-    # Telegram video caption hard limit is 1024
     if len(caption) > 1024:
         caption = caption[:1020] + "..."
         logger.warning(f"Registration caption truncated to 1024 chars for {telegram_id}")
@@ -323,21 +322,21 @@ def send_registration_video(bot: TeleBot, telegram_id: int):
 
         # 3. Last resort: text only
         if not sent:
-            bot.send_message(telegram_id, caption)
+            bot.send_message(telegram_id, caption, disable_web_page_preview=True)
             logger.warning(f"Sent registration caption as text only to {telegram_id}")
 
     except Exception as e:
         logger.error(f"send_registration_video failed for {telegram_id}: {e}")
         try:
-            bot.send_message(telegram_id, caption)
+            bot.send_message(telegram_id, caption, disable_web_page_preview=True)
         except Exception:
             pass
 
 
 def send_registration_steps(bot: TeleBot, telegram_id: int):
-    """Send ONLY the registration video with the perfect formatted caption. No plain text duplicate."""
+    """Send ONLY the registration video with formatted caption. No plain text duplicate."""
     try:
-        _send_typing(bot, telegram_id, 1.2)
+        _send_typing(bot, telegram_id, 1.0)
     except Exception:
         pass
     send_registration_video(bot, telegram_id)
@@ -346,11 +345,9 @@ def send_registration_steps(bot: TeleBot, telegram_id: int):
 def send_20s_registration_reminder(bot: TeleBot, telegram_id: int):
     """Send NOTE message, clean GIF separately, and then ID prompt text."""
     try:
-        # Message 1: NOTE
         _send_typing(bot, telegram_id, 1.0)
         bot.send_message(telegram_id, FINAL_NOTE)
 
-        # Message 2: GIF (Clean, without caption)
         _send_upload_action(bot, telegram_id, "upload_video", 1.0)
 
         setting = database.get_setting("account_id_gif_source")
@@ -360,7 +357,6 @@ def send_20s_registration_reminder(bot: TeleBot, telegram_id: int):
             gif_src = setting["value"].strip()
             from_chat, msg_id = _parse_telegram_post_link(gif_src)
 
-            # 1a. Channel post link -> copy message directly (clean, without caption)
             if from_chat and msg_id:
                 try:
                     bot.copy_message(
@@ -369,16 +365,13 @@ def send_20s_registration_reminder(bot: TeleBot, telegram_id: int):
                         message_id=msg_id
                     )
                     sent_gif = True
-                    logger.info(f"Copied clean GIF from {from_chat} msg #{msg_id} to {telegram_id}")
                 except Exception as e:
-                    logger.warning(f"Failed copy_message for clean GIF: {e}, trying forward")
                     try:
                         bot.forward_message(chat_id=telegram_id, from_chat_id=from_chat, message_id=msg_id)
                         sent_gif = True
-                    except Exception as fwd_err:
-                        logger.error(f"Failed forward_message for clean GIF: {fwd_err}")
+                    except Exception:
+                        pass
 
-            # 1b. Direct URL or File ID
             elif gif_src.startswith("http") or len(gif_src) > 20:
                 try:
                     bot.send_animation(telegram_id, gif_src)
@@ -390,7 +383,6 @@ def send_20s_registration_reminder(bot: TeleBot, telegram_id: int):
                     except Exception:
                         pass
 
-        # Fallback to local files if channel post not set / failed
         if not sent_gif:
             gif_candidates = [
                 os.path.join(config.MEDIA_DIR, "account_id.gif"),
@@ -408,16 +400,11 @@ def send_20s_registration_reminder(bot: TeleBot, telegram_id: int):
                     except Exception:
                         pass
 
-        # Message 3: Separate Text Message for the 9-Digit ID Prompt
         _send_typing(bot, telegram_id, 1.2)
-        bot.send_message(telegram_id, ACCOUNT_ID_PROMPT_CAPTION)
+        bot.send_message(telegram_id, ACCOUNT_ID_PROMPT_CAPTION, parse_mode="Markdown")
 
     except Exception as e:
         logger.error(f"Failed to send 20s reminder to {telegram_id}: {e}")
-        try:
-            bot.send_message(telegram_id, ACCOUNT_ID_PROMPT_CAPTION)
-        except Exception:
-            pass
 
 
 def send_vip_resources(bot: TeleBot, telegram_id: int):
