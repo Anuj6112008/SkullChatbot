@@ -14,33 +14,37 @@ class VerificationService:
     def __init__(self, bot: TeleBot):
         self.bot = bot
         self.channel_service = ChannelService(bot)
+        self._register_callbacks()
 
     def get_verification_channel_id(self) -> Optional[int]:
-        """Fetch verification channel ID from Supabase settings or config."""
-        try:
-            db_setting = database.get_setting("verification_channel_id")
-            if db_setting and str(db_setting).strip():
-                val = db_setting.get("value") if isinstance(db_setting, dict) else db_setting
-                if val:
-                    return int(str(val).strip())
-        except Exception:
-            pass
+        """Fetch verification / approvals channel ID dynamically."""
+        # 1. Check Supabase database settings
+        for key in ["verification_channel_id", "approvals_channel_id", "admin_channel_id"]:
+            try:
+                db_setting = database.get_setting(key)
+                if db_setting:
+                    val = db_setting.get("value") if isinstance(db_setting, dict) else db_setting
+                    if val and str(val).strip():
+                        return int(str(val).strip())
+            except Exception:
+                pass
 
-        if hasattr(config, "get_verification_channel_id"):
-            val = config.get_verification_channel_id()
+        # 2. Check config attributes
+        for attr in ["APPROVALS_CHANNEL_ID", "VERIFICATION_CHANNEL_ID", "ADMIN_CHANNEL_ID", "FREE_CHANNEL_ID"]:
+            val = getattr(config, attr, None)
             if val:
-                return int(val)
+                try:
+                    return int(val)
+                except Exception:
+                    pass
 
-        fallback = getattr(config, "VERIFICATION_CHANNEL_ID", None)
-        return int(fallback) if fallback else None
+        return None
 
     def approve_registration(self, registration_id: int, admin_id: int) -> Dict[str, Any]:
         try:
             registration = database.get_registration(registration_id)
             if not registration:
                 return {"success": False, "error": "Registration not found"}
-            if registration.get("verification_status") != "pending":
-                return {"success": False, "error": f"Registration is already {registration.get('verification_status')}"}
             telegram_id = registration.get("telegram_id")
             database.update_registration(registration_id, {
                 "verification_status": "approved",
@@ -53,8 +57,12 @@ class VerificationService:
                 "registered_at": get_current_timestamp(),
                 "registration_status": "approved"
             })
-            self.channel_service.grant_course_access(telegram_id)
-            self.channel_service.grant_updates_access(telegram_id)
+            try:
+                self.channel_service.grant_course_access(telegram_id)
+                self.channel_service.grant_updates_access(telegram_id)
+            except Exception as ge:
+                logger.warning(f"Access grant warning: {ge}")
+
             database.create_admin_log({
                 "admin_id": admin_id,
                 "action": "approve_registration",
@@ -62,13 +70,14 @@ class VerificationService:
                 "target_type": "user",
                 "details": {"registration_id": registration_id}
             })
-            user = database.get_user(telegram_id)
-            if user:
-                approval_text = self.get_approval_text()
-                try:
-                    self.bot.send_message(telegram_id, approval_text)
-                except Exception as e:
-                    logger.error(f"Failed to send approval message to user {telegram_id}: {e}")
+            
+            # Send approval message to user
+            approval_text = self.get_approval_text()
+            try:
+                self.bot.send_message(telegram_id, approval_text, parse_mode="Markdown")
+            except Exception as e:
+                logger.error(f"Failed to send approval message to user {telegram_id}: {e}")
+
             return {
                 "success": True,
                 "message": "Registration approved",
@@ -83,8 +92,6 @@ class VerificationService:
             registration = database.get_registration(registration_id)
             if not registration:
                 return {"success": False, "error": "Registration not found"}
-            if registration.get("verification_status") != "pending":
-                return {"success": False, "error": f"Registration is already {registration.get('verification_status')}"}
             telegram_id = registration.get("telegram_id")
             database.update_registration(registration_id, {
                 "verification_status": "rejected",
@@ -104,8 +111,6 @@ class VerificationService:
                 "details": {"registration_id": registration_id, "reason": reason}
             })
             rejection_text = self.get_rejection_text()
-            if reason:
-                rejection_text = f"{rejection_text}\n\nReason: {reason}"
             try:
                 self.bot.send_message(telegram_id, rejection_text)
             except Exception as e:
@@ -191,34 +196,16 @@ class VerificationService:
             return "❌ Your registration was declined. Please ensure you registered via our official link and deposited $50+."
 
     def get_welcome_text(self) -> str:
-        try:
-            setting = database.get_setting("welcome_text")
-            if setting:
-                val = setting.get("value") if isinstance(setting, dict) else setting
-                if val:
-                    return str(val)
-            return "Welcome to Skull VIP Community!"
-        except Exception as e:
-            logger.error(f"Failed to get welcome text: {e}")
-            return "Welcome to Skull VIP Community!"
+        return "Welcome to Skull VIP Community!"
 
     def get_registration_cta_text(self) -> str:
-        try:
-            setting = database.get_setting("registration_cta_text")
-            if setting:
-                val = setting.get("value") if isinstance(setting, dict) else setting
-                if val:
-                    return str(val)
-            return "Please register to get started."
-        except Exception as e:
-            logger.error(f"Failed to get registration CTA text: {e}")
-            return "Please register to get started."
+        return "Please register to get started."
 
     def notify_admin_about_registration(self, registration: Dict[str, Any]) -> bool:
-        """Send 9-Digit ID submission with exact format and 3 action buttons to Verification Channel & Admins."""
+        """Send 9-Digit ID submission with exact format and 3 action buttons to Approval Channel & Admins."""
         try:
             if not registration:
-                logger.error("notify_admin_about_registration called with empty registration data")
+                logger.error("notify_admin_about_registration called with empty data")
                 return False
 
             reg_id = registration.get("id") or 0
@@ -236,7 +223,7 @@ class VerificationService:
             username_val = user.get("username") or reg_data.get("username")
             username_display = f"@{username_val}" if username_val else "N/A"
 
-            # Exact Requested Format in Channel
+            # Exact Requested Format for Channel
             message = (
                 "🔔 𝗡𝗘𝗪 𝗧𝗥𝗔𝗗𝗜𝗡𝗚 𝗜𝗗 𝗦𝗨𝗕𝗠𝗜𝗦𝗦𝗜𝗢𝗡\n\n"
                 f"📊 𝗧𝗿𝗮𝗱𝗶𝗻𝗴 𝗜𝗗: `{trading_id}`\n"
@@ -256,7 +243,7 @@ class VerificationService:
 
             sent_anywhere = False
 
-            # 1. Send to Verification Channel if configured
+            # 1. Primary: Send to Approval / Verification Channel
             chan_id = self.get_verification_channel_id()
             if chan_id:
                 try:
@@ -267,9 +254,9 @@ class VerificationService:
                         parse_mode="Markdown"
                     )
                     sent_anywhere = True
-                    logger.info(f"Verification request for user {telegram_id} sent to Channel {chan_id}")
+                    logger.info(f"Verification request sent to Channel {chan_id}")
                 except Exception as ce:
-                    logger.error(f"Failed to post to verification channel {chan_id}: {ce}")
+                    logger.error(f"Failed to post to channel {chan_id}: {ce}")
 
             # 2. Also send to individual Admins
             admin_ids = config.get_admin_ids()
@@ -283,7 +270,7 @@ class VerificationService:
                     )
                     sent_anywhere = True
                 except Exception as ae:
-                    logger.error(f"Failed to send verification to admin {admin_id}: {ae}")
+                    logger.error(f"Failed to send to admin {admin_id}: {ae}")
 
             return sent_anywhere
 
@@ -291,8 +278,8 @@ class VerificationService:
             logger.error(f"Failed to notify admin about registration: {e}", exc_info=True)
             return False
 
-    def register_admin_callbacks(self):
-        """Register button clicks for Approve, Reject, and Already Registered."""
+    def _register_callbacks(self):
+        """Auto-register button callbacks for Approve, Reject, and Already Registered."""
         bot = self.bot
 
         @bot.callback_query_handler(func=lambda call: call.data and call.data.startswith("v_app_"))
