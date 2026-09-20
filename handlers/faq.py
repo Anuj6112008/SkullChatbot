@@ -95,12 +95,17 @@ class FAQHandler:
                 )
                 return
 
+            first_name = user.get("first_name") or ""
+            last_name = user.get("last_name") or ""
+            full_name = f"{first_name} {last_name}".strip() or "Trader"
+            username = user.get("username") or ""
+
             registration_data = {
                 "telegram_id": telegram_id,
                 "registration_data": {
                     "trading_account_id": account_id,
-                    "full_name": user.get("first_name") or "",
-                    "username": user.get("username") or "",
+                    "full_name": full_name,
+                    "username": username,
                     "source": "direct_chat"
                 },
                 "verification_status": "pending"
@@ -144,6 +149,32 @@ class FAQHandler:
                 self._submit_account_id(telegram_id, account_id, user)
                 return
 
+            # Check direct "VIP" keywords before calling AI to make it instant and accurate
+            text_lower = text.lower().strip()
+            exact_vip_words = {"vip", "v.i.p", "viip", "join", "register"}
+            words_in_text = set(re.findall(r'\b\w+\b', text_lower))
+
+            registration_keywords = [
+                "register", "registration", "vip join", "join vip", "how to join",
+                "how to register", "joining link", "registration link", "account create",
+                "vip registration", "want vip", "join the vip", "vip process", "vip steps",
+                "full process", "registration video", "vip video", "process video",
+                "registration process", "vip reg", "regesitt", "registation", "regestration",
+                "link pampu", "join link", "vip link", "send link", "send video"
+            ]
+
+            is_direct_vip = bool(words_in_text & exact_vip_words) or any(k in text_lower for k in registration_keywords)
+
+            if is_direct_vip:
+                try:
+                    bot.send_chat_action(telegram_id, "upload_video")
+                except Exception:
+                    pass
+                time.sleep(0.5)
+                promo.send_registration_steps(bot, telegram_id)
+                return
+
+            # If not direct VIP, check AI response
             response = ai_service.generate_response(text, user)
 
             if response.get("support_needed"):
@@ -166,22 +197,16 @@ class FAQHandler:
                 "I understood your question. If you need more help, just tell me."
             )
 
-            # Detect registration / video / process intent — ALWAYS send video+caption, never AI text template
-            text_lower = text.lower()
-            registration_keywords = [
-                "register", "registration", "vip join", "join vip", "how to join",
-                "how to register", "joining link", "registration link", "account create",
-                "vip registration", "want vip", "join the vip", "vip process", "vip steps",
-                "full process", "registration video", "vip video", "process video",
-                "registration process", "vip reg", "regesitt", "registation", "regestration",
-                "link pampu", "join link", "vip link"
-            ]
+            # Check if AI intent is REGISTRATION or AI text mentions sending registration video
             intent = (response.get("intent") or "").upper()
-            wants_registration = intent == "REGISTRATION" or any(k in text_lower for k in registration_keywords)
+            ai_mentions_video = any(
+                phrase in reply_text.lower()
+                for phrase in ["sending the vip", "registration video", "sending the video", "vip registration video"]
+            )
+
+            wants_registration = intent == "REGISTRATION" or ai_mentions_video
 
             if wants_registration:
-                # Do NOT send AI's text reply (it often has only the link).
-                # Send ONLY the registration video with full template caption.
                 try:
                     bot.send_chat_action(telegram_id, "upload_video")
                 except Exception:
