@@ -91,7 +91,7 @@ def register_start_handlers(
 
             # 1. If user is already an approved VIP member
             if user_data and user_data.get("verification_status") == "approved":
-                _send_typing(bot, telegram_id, 1.8)
+                _send_typing(bot, telegram_id, 1.5)
                 bot.send_message(
                     telegram_id,
                     "Welcome back! You are an active VIP member. Feel free to ask any questions or reach out to support.",
@@ -101,7 +101,7 @@ def register_start_handlers(
 
             # 2. If user is already in the middle of registration
             if current_state in ACTIVE_STATES and current_state != STATE_AWAITING_EXPERIENCE:
-                _send_typing(bot, telegram_id, 1.8)
+                _send_typing(bot, telegram_id, 1.5)
                 bot.send_message(
                     telegram_id,
                     "Your registration is still in progress. Let's continue from where we left off!"
