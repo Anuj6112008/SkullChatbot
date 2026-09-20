@@ -47,26 +47,26 @@ REENGAGEMENT_TEXT = (
 )
 
 REGISTRATION_STEPS_CAPTION = (
-    "🔥 𝗝𝗢𝗜𝗡 𝗧𝗛𝗘 𝗩𝗜𝗣 𝗖𝗢𝗠𝗠𝗨𝗡𝗜𝗧𝗬 🔥\n\n"
-    "Follow these 𝟱 𝘀𝗶𝗺𝗽𝗹𝗲 𝘀𝘁𝗲𝗽𝘀 to complete your VIP registration 👇\n\n"
-    "🔗 𝗝𝗢𝗜𝗡𝗜𝗡𝗚 𝗟𝗜𝗡𝗞\n"
+    "🔥 JOIN THE VIP COMMUNITY 🔥\n\n"
+    "Follow these 5 simple steps 👇\n\n"
+    "🔗 JOINING LINK\n"
     "{link}\n\n"
     "━━━━━━━━━━━━━━━━━━\n\n"
-    "🟢 𝗦𝗧𝗘𝗣 𝟭 — 𝗖𝗥𝗘𝗔𝗧𝗘 𝗬𝗢𝗨𝗥 𝗔𝗖𝗖𝗢𝗨𝗡𝗧\n"
-    "Register and open a 𝗻𝗲𝘄 𝘁𝗿𝗮𝗱𝗶𝗻𝗴 𝗮𝗰𝗰𝗼𝘂𝗻𝘁 using the joining link above. 📝\n\n"
-    "🎁 𝗦𝗧𝗘𝗣 𝟮 — 𝗚𝗘𝗧 𝗬𝗢𝗨𝗥 𝗕𝗢𝗡𝗨𝗦\n"
-    "Use the joining link and you will automatically receive a 𝟱𝟬% 𝗱𝗲𝗽𝗼𝘀𝗶𝘁 𝗯𝗼𝗻𝘂𝘀, subject to the platform's terms. 💰\n\n"
-    "💵 𝗦𝗧𝗘𝗣 𝟯 — 𝗠𝗔𝗞𝗘 𝗬𝗢𝗨𝗥 𝗗𝗘𝗣𝗢𝗦𝗜𝗧\n"
-    "Deposit 𝗮𝘁 𝗹𝗲𝗮𝘀𝘁 $𝟱𝟬 to get started with the VIP trading setup. 🚀\n\n"
-    "🆔 𝗦𝗧𝗘𝗣 𝟰 — 𝗦𝗘𝗡𝗗 𝗬𝗢𝗨𝗥 𝗔𝗖𝗖𝗢𝗨𝗡𝗧 𝗜𝗗\n"
-    "Send us your 𝘁𝗿𝗮𝗱𝗶𝗻𝗴 𝗮𝗰𝗰𝗼𝘂𝗻𝘁 𝗜𝗗\n"
+    "🟢 STEP 1 — CREATE ACCOUNT\n"
+    "Open a new trading account using the link above.\n\n"
+    "🎁 STEP 2 — GET BONUS\n"
+    "Get 50% deposit bonus automatically (platform terms apply).\n\n"
+    "💵 STEP 3 — DEPOSIT\n"
+    "Deposit at least $50 to continue.\n\n"
+    "🆔 STEP 4 — SEND ACCOUNT ID\n"
+    "Send your trading account ID here\n"
     "Example: 12355426789\n"
-    "Our team will manually verify your account and process your approval. ✅\n\n"
-    "👑 𝗦𝗧𝗘𝗣 𝟱 — 𝗘𝗡𝗧𝗘𝗥 𝗧𝗛𝗘 𝗩𝗜𝗣 𝗖𝗢𝗠𝗠𝗨𝗡𝗜𝗧𝗬\n"
-    "Once your account is verified, you will be added to the 𝗩𝗜𝗣 𝗖𝗼𝗺𝗺𝘂𝗻𝗶𝘁𝘆 and receive access to the exclusive VIP resources. 🔥\n\n"
+    "We will verify and approve it.\n\n"
+    "👑 STEP 5 — ENTER VIP\n"
+    "After verification you get VIP access + exclusive resources.\n\n"
     "━━━━━━━━━━━━━━━━━━\n\n"
-    "⚡ 𝗖𝗢𝗠𝗣𝗟𝗘𝗧𝗘 𝗔𝗟𝗟 𝟱 𝗦𝗧𝗘𝗣𝗦 𝗧𝗢 𝗔𝗖𝗧𝗜𝗩𝗔𝗧𝗘 𝗬𝗢𝗨𝗥 𝗩𝗜𝗣 𝗔𝗖𝗖𝗘𝗦𝗦 ⚡\n\n"
-    "💬 Need help? Just message me here, I will help you."
+    "⚡ Complete all 5 steps to activate VIP access\n\n"
+    "💬 Need help? Message me here."
 )
 
 FINAL_NOTE = (
@@ -259,65 +259,83 @@ def send_reengagement_message(bot: TeleBot, telegram_id: int):
 
 
 def send_registration_video(bot: TeleBot, telegram_id: int):
-    """Send tutorial video from Telegram channel post link (Public/Private), direct URL, or local disk."""
+    """Send registration video with perfect caption. Always tries local file as reliable fallback."""
     link = config.get_joining_link() or "(link not configured)"
     caption = REGISTRATION_STEPS_CAPTION.format(link=link)
+    # Telegram video caption hard limit is 1024
+    if len(caption) > 1024:
+        caption = caption[:1020] + "..."
+        logger.warning(f"Registration caption truncated to 1024 chars for {telegram_id}")
 
     try:
         _send_upload_action(bot, telegram_id, "upload_video", 0.8)
 
-        # 1. Check dynamic video source from Supabase
-        setting = database.get_setting("registration_video_source")
-        if setting and setting.get("value"):
-            video_src = setting["value"].strip()
-            from_chat, msg_id = _parse_telegram_post_link(video_src)
+        sent = False
 
-            if from_chat and msg_id:
+        # 1. Try dynamic video source from Supabase (channel post / URL / file_id)
+        try:
+            setting = database.get_setting("registration_video_source")
+            if setting and setting.get("value"):
+                video_src = setting["value"].strip()
+                from_chat, msg_id = _parse_telegram_post_link(video_src)
+
+                if from_chat and msg_id:
+                    try:
+                        bot.copy_message(
+                            chat_id=telegram_id,
+                            from_chat_id=from_chat,
+                            message_id=msg_id,
+                            caption=caption
+                        )
+                        logger.info(f"Copied registration video from {from_chat} #{msg_id} to {telegram_id}")
+                        sent = True
+                    except Exception as e:
+                        logger.error(f"copy_message failed: {e}")
+                elif video_src.startswith("http") or len(video_src) > 20:
+                    try:
+                        bot.send_video(
+                            telegram_id,
+                            video_src,
+                            caption=caption,
+                            supports_streaming=True
+                        )
+                        logger.info(f"Sent registration video from URL/file_id to {telegram_id}")
+                        sent = True
+                    except Exception as e:
+                        logger.error(f"send_video URL/file_id failed: {e}")
+        except Exception as e:
+            logger.error(f"Dynamic registration video source failed: {e}")
+
+        # 2. Local file fallback (most reliable)
+        if not sent:
+            video_path = config.get_registration_video_path()
+            if video_path and os.path.exists(video_path):
                 try:
-                    bot.copy_message(
-                        chat_id=telegram_id,
-                        from_chat_id=from_chat,
-                        message_id=msg_id,
-                        caption=caption
-                    )
-                    logger.info(f"Copied tutorial video from {from_chat} msg #{msg_id} to {telegram_id}")
-                    return
+                    with open(video_path, "rb") as vf:
+                        bot.send_video(
+                            telegram_id,
+                            vf,
+                            caption=caption,
+                            supports_streaming=True,
+                            timeout=120
+                        )
+                    logger.info(f"Sent local registration.mp4 to {telegram_id}")
+                    sent = True
                 except Exception as e:
-                    logger.error(f"Failed to copy video from channel post ({from_chat}, #{msg_id}): {e}")
+                    logger.error(f"Local registration video failed: {e}")
 
-            elif video_src.startswith("http") or len(video_src) > 20:
-                try:
-                    bot.send_video(
-                        telegram_id,
-                        video_src,
-                        caption=caption,
-                        supports_streaming=True
-                    )
-                    logger.info(f"Sent tutorial video from URL/file_id to {telegram_id}")
-                    return
-                except Exception as e:
-                    logger.error(f"Failed to send video from URL/file_id: {e}")
-
-        # 2. Fallback to local video file
-        video_path = config.get_registration_video_path()
-        if video_path and os.path.exists(video_path):
-            with open(video_path, "rb") as vf:
-                bot.send_video(
-                    telegram_id,
-                    vf,
-                    caption=caption,
-                    supports_streaming=True,
-                    timeout=120
-                )
-        else:
+        # 3. Last resort: text only
+        if not sent:
             bot.send_message(telegram_id, caption)
+            logger.warning(f"Sent registration caption as text only to {telegram_id}")
 
     except Exception as e:
-        logger.error(f"Failed to send registration video to {telegram_id}: {e}")
+        logger.error(f"send_registration_video failed for {telegram_id}: {e}")
         try:
             bot.send_message(telegram_id, caption)
         except Exception:
             pass
+
 
 
 def send_registration_steps(bot: TeleBot, telegram_id: int):
