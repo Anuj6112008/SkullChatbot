@@ -166,28 +166,31 @@ class FAQHandler:
                 "I understood your question. If you need more help, just tell me."
             )
 
-            # Detect registration intent
-            intent = (response.get("intent") or "").upper()
+            # Detect registration / video / process intent — ALWAYS send video+caption, never AI text template
             text_lower = text.lower()
             registration_keywords = [
                 "register", "registration", "vip join", "join vip", "how to join",
                 "how to register", "joining link", "registration link", "account create",
-                "vip registration", "want vip", "join the vip", "vip process", "vip steps"
+                "vip registration", "want vip", "join the vip", "vip process", "vip steps",
+                "full process", "registration video", "vip video", "process video",
+                "registration process", "vip reg", "regesitt", "registation", "regestration",
+                "link pampu", "join link", "vip link"
             ]
+            intent = (response.get("intent") or "").upper()
             wants_registration = intent == "REGISTRATION" or any(k in text_lower for k in registration_keywords)
 
             if wants_registration:
-                # Short intro only if AI didn't already give the link; then video with perfect caption ONCE
-                short_reply = "Sure! Here is the complete VIP registration process with video 👇"
-                delay = _calc_typing_delay(short_reply)
-                _send_typing(bot, telegram_id, delay)
-                bot.send_message(telegram_id, short_reply)
-                time.sleep(0.8)
-                # Single call → video + perfect caption only (no plain text template)
+                # Do NOT send AI's text reply (it often has only the link).
+                # Send ONLY the registration video with full template caption.
+                try:
+                    bot.send_chat_action(telegram_id, "upload_video")
+                except Exception:
+                    pass
+                time.sleep(0.5)
                 promo.send_registration_steps(bot, telegram_id)
                 return
 
-            # Normal AI reply
+            # Normal AI reply (non-registration)
             delay = _calc_typing_delay(reply_text)
             _send_typing(bot, telegram_id, delay)
             bot.send_message(telegram_id, reply_text)
