@@ -228,7 +228,7 @@ def send_testimonials(bot: TeleBot, telegram_id: int):
 
 def send_no_fee_message(bot: TeleBot, telegram_id: int):
     try:
-        _send_typing(bot, telegram_id, 1.5)
+        _send_typing(bot, telegram_id, 1.0)
         bot.send_message(telegram_id, NO_FEE_TEXT)
     except Exception as e:
         logger.error(f"Failed to send no-fee message to {telegram_id}: {e}")
@@ -236,7 +236,7 @@ def send_no_fee_message(bot: TeleBot, telegram_id: int):
 
 def send_vip_benefits(bot: TeleBot, telegram_id: int):
     try:
-        _send_typing(bot, telegram_id, 1.5)
+        _send_typing(bot, telegram_id, 1.0)
         bot.send_message(telegram_id, VIP_BENEFITS_TEXT)
     except Exception as e:
         logger.error(f"Failed to send VIP benefits to {telegram_id}: {e}")
@@ -252,7 +252,7 @@ def send_ask_to_join(bot: TeleBot, telegram_id: int):
 
 def send_reengagement_message(bot: TeleBot, telegram_id: int):
     try:
-        _send_typing(bot, telegram_id, 1.5)
+        _send_typing(bot, telegram_id, 1.0)
         bot.send_message(telegram_id, REENGAGEMENT_TEXT)
     except Exception as e:
         logger.error(f"Failed to send reengagement message to {telegram_id}: {e}")
@@ -264,7 +264,7 @@ def send_registration_video(bot: TeleBot, telegram_id: int):
     caption = REGISTRATION_STEPS_CAPTION.format(link=link)
 
     try:
-        _send_upload_action(bot, telegram_id, "upload_video", 1.2)
+        _send_upload_action(bot, telegram_id, "upload_video", 0.8)
 
         # 1. Check dynamic video source from Supabase
         setting = database.get_setting("registration_video_source")
@@ -321,17 +321,11 @@ def send_registration_video(bot: TeleBot, telegram_id: int):
 
 
 def send_registration_steps(bot: TeleBot, telegram_id: int):
+    """Send ONLY the registration video with the perfect formatted caption. No plain text duplicate."""
     try:
-        _send_typing(bot, telegram_id, 1.5)
-        bot.send_message(
-            telegram_id,
-            "Here is the complete VIP joining process 👇\n\n"
-            "To learn trading seriously, the first basic step is to have a proper trading account.\n\n"
-            "Follow the steps carefully:"
-        )
-    except Exception as e:
-        logger.error(f"Failed to send joining-process intro to {telegram_id}: {e}")
-
+        _send_typing(bot, telegram_id, 1.2)
+    except Exception:
+        pass
     send_registration_video(bot, telegram_id)
 
 
@@ -339,7 +333,7 @@ def send_20s_registration_reminder(bot: TeleBot, telegram_id: int):
     """Send NOTE message, clean GIF separately, and then ID prompt text."""
     try:
         # Message 1: NOTE
-        _send_typing(bot, telegram_id, 1.5)
+        _send_typing(bot, telegram_id, 1.0)
         bot.send_message(telegram_id, FINAL_NOTE)
 
         # Message 2: GIF (Clean, without caption)
@@ -415,7 +409,7 @@ def send_20s_registration_reminder(bot: TeleBot, telegram_id: int):
 def send_vip_resources(bot: TeleBot, telegram_id: int):
     try:
         msg = config.get_vip_resources_message()
-        _send_typing(bot, telegram_id, 1.5)
+        _send_typing(bot, telegram_id, 1.0)
         bot.send_message(telegram_id, msg)
         logger.info(f"Sent 2-minute VIP resources message to {telegram_id}")
     except Exception as e:
