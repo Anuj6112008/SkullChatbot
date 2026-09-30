@@ -63,6 +63,55 @@ def get_current_timestamp():
 def get_current_datetime():
     return datetime.datetime.now(datetime.timezone.utc)
 
+def get_scheduler_timezone():
+    """Timezone used for all follow-up window / quiet-hour decisions."""
+    try:
+        import pytz
+        return pytz.timezone(config.SCHEDULER_TIMEZONE)
+    except Exception:
+        return datetime.timezone.utc
+
+def to_scheduler_tz(dt=None):
+    """Convert an aware datetime (default: now) to the scheduler timezone."""
+    tz = get_scheduler_timezone()
+    if dt is None:
+        dt = datetime.datetime.now(datetime.timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(tz)
+
+def is_in_followup_quiet_hours(dt=None) -> bool:
+    """True when the local time falls inside the no-followup window (1 AM - 9 AM)."""
+    local = to_scheduler_tz(dt)
+    start = config.FOLLOWUP_QUIET_START_HOUR
+    end = config.FOLLOWUP_QUIET_END_HOUR
+    if start <= end:
+        return start <= local.hour < end
+    return local.hour >= start or local.hour < end
+
+def is_followup_window_closed(dt=None) -> bool:
+    """True when today's 1 PM - 9 PM follow-up window has already ended."""
+    local = to_scheduler_tz(dt)
+    return local.hour >= config.FOLLOWUP_WINDOW_END_HOUR
+
+def random_followup_due_time(day=None) -> datetime.datetime:
+    """Pick one random moment today between 1:00 PM and 9:00 PM (scheduler tz)."""
+    import random
+    tz = get_scheduler_timezone()
+    if day is None:
+        day = to_scheduler_tz().date()
+    start_hour = config.FOLLOWUP_WINDOW_START_HOUR
+    end_hour = config.FOLLOWUP_WINDOW_END_HOUR
+    # Random minute inside [start_hour:00, end_hour:00)
+    start_minutes = start_hour * 60
+    end_minutes = end_hour * 60
+    pick = random.randint(start_minutes, end_minutes - 1)
+    local = datetime.datetime(
+        day.year, day.month, day.day, pick // 60, pick % 60, 0
+    )
+    return tz.localize(local) if hasattr(tz, "localize") else local.replace(tzinfo=tz)
+
+
 def format_datetime(dt):
     if isinstance(dt, str):
         try:

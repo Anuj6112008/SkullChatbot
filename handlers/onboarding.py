@@ -132,12 +132,12 @@ class OnboardingHandler:
 
         _send_typing(self.bot, telegram_id, 1.5)
         if is_beginner:
-            self.bot.send_message(telegram_id, "Parledu, nen kooda 2 years back Zero🤭 nunde start chesa")
+            self.bot.send_message(telegram_id, "No worries — even I started from Zero 2 years back 🤭")
         else:
             self.bot.send_message(telegram_id, "Oh Nice 👌🏼")
 
         _send_typing(self.bot, telegram_id, 1.2)
-        self.bot.send_message(telegram_id, "Sorry, adagadam marchipoya - what's your Name?")
+        self.bot.send_message(telegram_id, "Sorry, I forgot to ask — what's your name?")
         svc.set_state(telegram_id, STATE_AWAITING_NAME)
 
     # ------------------------------------------------------------------
@@ -168,7 +168,7 @@ class OnboardingHandler:
         self.bot.send_message(telegram_id, f"Nice to meet you, {name}!🤝")
 
         _send_typing(self.bot, telegram_id, 1.5)
-        self.bot.send_message(telegram_id, f"{name}, Mi age and aee profession lo unnaru?")
+        self.bot.send_message(telegram_id, f"{name}, What’s your Age and Profession ?")
 
         svc.set_state(telegram_id, STATE_AWAITING_AGE_OCCUPATION)
 
@@ -191,7 +191,7 @@ class OnboardingHandler:
             if new_name:
                 svc.save_answer(telegram_id, "name", new_name)
                 _send_typing(self.bot, telegram_id, 1.5)
-                self.bot.send_message(telegram_id, f"Ahh okay, noted {new_name}! 😊 Mi age and profession kooda cheppandi, mana setup finish cheddam 👍")
+                self.bot.send_message(telegram_id, f"Ahh okay, noted {new_name} ! But you have forgot to mention your Age and Profession 🙃")
                 return
 
         existing_data = svc.get_data(telegram_id)
@@ -209,20 +209,20 @@ class OnboardingHandler:
                 "profession": str(final_prof)
             })
             _send_typing(self.bot, telegram_id, 1.5)
-            self.bot.send_message(telegram_id, "GOOD !  As of now me daggara Trading Capital entha undi in INR?")
+            self.bot.send_message(telegram_id, f"GOOD ! How much capital do you have for trading? \nKindly Reply in Rupees \nExample - 25000")
             svc.set_state(telegram_id, STATE_AWAITING_CAPITAL)
             return
 
         if final_age and not final_prof:
             svc.save_answer(telegram_id, "age", str(final_age))
             _send_typing(self.bot, telegram_id, 1.5)
-            self.bot.send_message(telegram_id, "Mee profession cheppadam marchipoyaru, please mee profession kooda cheppandi.")
+            self.bot.send_message(telegram_id, f"{name} , can you kindly let me know profession aswell")
             return
 
         if final_prof and not final_age:
             svc.save_answer(telegram_id, "profession", str(final_prof))
             _send_typing(self.bot, telegram_id, 1.5)
-            self.bot.send_message(telegram_id, "Mee age cheppadam marchipoyaru, please mee age kooda cheppandi.")
+            self.bot.send_message(telegram_id, "Sorry, I think you forgot to tell me about your Age.")
             return
 
         bridge_reply = ai_service.generate_conversational_bridge(text, name, STATE_AWAITING_AGE_OCCUPATION, user)
@@ -359,7 +359,7 @@ class OnboardingHandler:
             _send_typing(self.bot, telegram_id, 1.2)
             self.bot.send_message(
                 telegram_id,
-                "Trading Account ID lo exactly 9 digits undali. Meeru ichina ID lo 9 digits kante takkuva unayi. Please correct 9-digit Trading ID ni send cheyandi."
+                f"The trading Id 🪪 must exactly consistent 9 Digits \n\n Kindly send the correct Id Number of your Pocket Options account"
             )
             return
 
@@ -367,7 +367,7 @@ class OnboardingHandler:
             _send_typing(self.bot, telegram_id, 1.2)
             self.bot.send_message(
                 telegram_id,
-                "Trading Account ID lo exactly 9 digits undali. Meeru ichina ID lo 9 digits kante ekkuva unayi. Please correct 9-digit Trading ID ni send cheyandi."
+                "The trading Id 🪪 must exactly consistent 9 Digits \n\n Kindly send the correct Id Number of your Pocket Options account"
             )
             return
 
@@ -529,14 +529,14 @@ class OnboardingHandler:
 
                 if invite_link:
                     approval_msg = (
-                        "Mee registration request approve ayindi ✅ and mee VIP access active ayindi! 🎉\n\n"
-                        "Idi mee exclusive one-time VIP Community Joining Link 👇\n"
+                        "Welcome to the Skull VIP community 🤝 \n Your registration is succesfull 🎉\n\n"
+                        "This is your exclusive One-Time  VIP joining link 👇\n"
                         f"{invite_link}\n\n"
-                        "⚠️ Note: Ee link okkasari matrame pani chesthundi. Join avvagane expire avthundi."
+                        "⚠️ Note : This link expires once you Join the group."
                     )
                 else:
                     approval_msg = (
-                        "Mee registration request approve ayindi ✅ and mee VIP access active ayindi! Welcome to VIP Community! 🎉"
+                        "Welcome to the Skull VIP community 🤝 \n Your registration is succesfull 🎉"
                     )
 
                 try:
@@ -600,9 +600,9 @@ class OnboardingHandler:
 
                 link = config.get_joining_link() or "https://in.tradingview.com/symbols/NSE-BANKNIFTY/"
                 reject_msg = (
-                    "❌ Mi Registration Decline ayyindi \n\n"
-                    "Kindly create account through our Student link to get VIP access\n\n"
-                    "Kindly use this link👇👇\n"
+                    "❌ Your registration has been declined.\n\n"
+                    "Please create your account through our official Student link to get VIP access.\n\n"
+                    "Use this link👇👇\n"
                     f"{link}"
                 )
 

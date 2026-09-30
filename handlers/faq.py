@@ -25,7 +25,6 @@ DEBOUNCE_SECONDS = 1.5
 
 
 def _send_typing(bot: TeleBot, chat_id: int, delay: float = 1.5):
-    """Show realistic typing indicator."""
     try:
         bot.send_chat_action(chat_id, "typing")
         time.sleep(delay)
@@ -42,20 +41,40 @@ def _calc_typing_delay(text: str) -> float:
     return max(2.0, min(delay, 5.0))
 
 
-def _looks_like_account_id(text: str) -> str | None:
-    """If message is primarily a trading account ID (7-12 digits), return the digits."""
+def _extract_exact_9digit_id(text: str) -> str | None:
+    """Strictly returns 9-digit trading ID only."""
     if not text:
         return None
-    cleaned = re.sub(r"[\s\-#]", "", text.strip())
-    if cleaned.isdigit() and 7 <= len(cleaned) <= 12:
+    cleaned = re.sub(r"[\s\-#:]", "", text.strip())
+    # Exact 9 digits
+    if cleaned.isdigit() and len(cleaned) == 9:
         return cleaned
-    m = re.search(r"(?:account\s*id|id|acc(?:ount)?)\s*[:\-]?\s*(\d{7,12})", text, re.I)
+    m = re.search(r"(?:account\s*id|id|acc(?:ount)?)\s*[:\-]?\s*(\d{9})\b", text, re.I)
     if m:
         return m.group(1)
-    m2 = re.search(r"\b(\d{8,12})\b", text)
-    if m2 and len(text) < 40:
-        return m2.group(1)
     return None
+
+
+def _is_invalid_number_attempt(text: str) -> bool:
+    """Check if input is pure numbers but NOT 9 digits."""
+    if not text:
+        return False
+    cleaned = re.sub(r"[\s\-#:]", "", text.strip())
+    if cleaned.isdigit() and len(cleaned) != 9:
+        return True
+    return False
+
+
+def _is_already_registered_intent(text: str) -> bool:
+    """Detect if user is saying they have already registered or already have an account."""
+    t = text.lower()
+    phrases = [
+        "already registered", "already register", "already have account",
+        "already created", "already done", "already account", "i have registered",
+        "i have already", "already joined", "already deposit", "already open",
+        "account undi", "register aindi", "already reg"
+    ]
+    return any(p in t for p in phrases)
 
 
 class FAQHandler:
@@ -74,7 +93,7 @@ class FAQHandler:
         self.verification_service = VerificationService(bot)
 
     def _submit_account_id(self, telegram_id: int, account_id: str, user: dict):
-        """Submit trading account ID to VIP approval channel with details and buttons."""
+        """Submit exact 9-digit trading account ID to VIP approval channel."""
         bot = self.bot
         try:
             if user.get("verification_status") == "approved":
@@ -95,18 +114,28 @@ class FAQHandler:
             full_name = f"{first_name} {last_name}".strip() or "Trader"
             username = user.get("username") or ""
 
+            experience = user.get("experience") or user.get("trading_experience")
+            age = user.get("age")
+            profession = user.get("profession") or user.get("occupation")
+            capital = user.get("capital") or user.get("trading_capital")
+
             registration_data = {
                 "telegram_id": telegram_id,
                 "registration_data": {
-                    "trading_account_id": account_id,
+                    "trading_account_id": str(account_id),
                     "full_name": full_name,
                     "username": username,
+                    "experience": experience,
+                    "age": age,
+                    "profession": profession,
+                    "capital": capital,
                     "source": "direct_chat"
                 },
                 "verification_status": "pending"
             }
             registration = database.create_registration(registration_data)
             database.update_user(telegram_id, {
+                "account_id": str(account_id),
                 "registration_status": "pending_verification",
                 "onboarding_state": "submitted_for_verification",
                 "last_activity": get_current_timestamp()
@@ -117,7 +146,7 @@ class FAQHandler:
                 telegram_id,
                 f"✅ **Account ID Received:** `{account_id}`\n\n"
                 "Your registration is now pending manual verification. ⏳\n"
-                "You will receive your VIP link here once approved.",
+                "Once approved, your **1-Time VIP Access Link** will be sent here!",
                 parse_mode="Markdown"
             )
 
@@ -125,42 +154,70 @@ class FAQHandler:
                 try:
                     self.verification_service.notify_admin_about_registration(registration)
                 except Exception as ne:
-                    logger.error(f"Failed to notify channel for direct registration {telegram_id}: {ne}")
+                    logger.error(f"Failed to notify channel for registration {telegram_id}: {ne}")
 
-            logger.info(f"Direct account ID submitted by {telegram_id}: {account_id}")
+            logger.info(f"9-digit account ID submitted by {telegram_id}: {account_id}")
         except Exception as e:
-            logger.error(f"Direct account ID submit failed for {telegram_id}: {e}")
+            logger.error(f"Account ID submit failed for {telegram_id}: {e}", exc_info=True)
             bot.send_message(telegram_id, "Something went wrong while submitting your ID. Please try again.")
 
     def _process_combined_message(self, telegram_id: int, combined_text: str, user: dict):
-        """Process user message instantly."""
+        """Process user message with strict checks."""
         try:
             bot = self.bot
             text = sanitize_text(combined_text)
             if not text:
                 return
 
-            # 1. Check Trading Account ID
-            account_id = _looks_like_account_id(text)
-            if account_id:
-                self._submit_account_id(telegram_id, account_id, user)
+            # 1. Strict 9-Digit Trading Account ID Check
+            account_id_9 = _extract_exact_9digit_id(text)
+            if account_id_9:
+                self._submit_account_id(telegram_id, account_id_9, user)
                 return
 
-            # 2. Check VIP and Registration intent
+            # 2. Strict Check for Non-9-Digit Number Attempts (e.g. 5, 8, 10, 11 digits)
+            if _is_invalid_number_attempt(text):
+                _send_typing(bot, telegram_id, 1.0)
+                bot.send_message(
+                    telegram_id,
+                    "⚠️ **Invalid Account ID**\n\n"
+                    "Your Trading account Id must strictly be only 9 digits.\n\n"
+                    "👉 **Example:** `123456789`\n\n"
+                    "Kindly resend your 9 digit trading ID correctly! 📝",
+                    parse_mode="Markdown"
+                )
+                return
+
+            # 3. Check 'Already Registered' Intent (Do NOT send video, ask for ID)
+            if _is_already_registered_intent(text):
+                _send_typing(bot, telegram_id, 1.2)
+                already_reg_reply = (
+                    "That’s great! Since you're already registered, we just need to verify your account. "
+                    "Please send your **9-digit Trading Account ID** here so I can get your VIP access approved! 🆔\n\n"
+                    "👉 **Example:** `123456789`"
+                )
+                bot.send_message(telegram_id, already_reg_reply, parse_mode="Markdown")
+                self.registration_service.set_registration_state(telegram_id, "awaiting_account_id")
+                return
+
+            # 4. Check VIP and Registration Intent (Send Video)
             text_lower = text.lower().strip()
-            exact_vip_words = {"vip", "v.i.p", "viip", "join", "register"}
+            exact_vip_words = {"vip", "v.i.p", "viip", "join"}
             words_in_text = set(re.findall(r'\b\w+\b', text_lower))
 
             registration_keywords = [
-                "register", "registration", "vip join", "join vip", "how to join",
-                "how to register", "joining link", "registration link", "account create",
-                "vip registration", "want vip", "join the vip", "vip process", "vip steps",
-                "full process", "registration video", "vip video", "process video",
-                "registration process", "vip reg", "regesitt", "registation", "regestration",
-                "link pampu", "join link", "vip link", "send link", "send video"
+                "vip join", "join vip", "how to join", "how to register",
+                "joining link", "registration link", "account create", "vip registration",
+                "want vip", "join the vip", "vip process", "vip steps", "full process",
+                "registration video", "vip video", "process video", "registration process",
+                "vip reg", "regesitt", "link pampu", "join link", "vip link", "send link", "send video"
             ]
 
-            is_direct_vip = bool(words_in_text & exact_vip_words) or any(k in text_lower for k in registration_keywords)
+            # Exact 'register' word only if not saying 'already'
+            if "register" in words_in_text and "already" not in text_lower:
+                is_direct_vip = True
+            else:
+                is_direct_vip = bool(words_in_text & exact_vip_words) or any(k in text_lower for k in registration_keywords)
 
             if is_direct_vip:
                 try:
@@ -171,7 +228,7 @@ class FAQHandler:
                 promo.send_registration_steps(bot, telegram_id)
                 return
 
-            # 3. AI FAQ & Knowledgebase Handling
+            # 5. Route text/words/questions (e.g. 'Brooo', 'Abc', general chat) to AI FAQ
             response = ai_service.generate_response(text, user)
 
             if response.get("support_needed"):
@@ -191,7 +248,7 @@ class FAQHandler:
 
             reply_text = response.get(
                 "response",
-                "I understood your question. Write VIP to receive the registration video and steps!"
+                "I understood your question. Type VIP to get the registration video and steps!"
             )
 
             intent = (response.get("intent") or "").upper()
@@ -201,15 +258,17 @@ class FAQHandler:
             )
 
             if intent == "REGISTRATION" or ai_mentions_video:
-                try:
-                    bot.send_chat_action(telegram_id, "upload_video")
-                except Exception:
-                    pass
-                time.sleep(0.5)
-                promo.send_registration_steps(bot, telegram_id)
-                return
+                if not _is_already_registered_intent(text):
+                    try:
+                        bot.send_chat_action(telegram_id, "upload_video")
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
+                    promo.send_registration_steps(bot, telegram_id)
+                    return
+                else:
+                    reply_text = "Please send your 9-digit Trading Account ID so we can verify your VIP access! 🆔"
 
-            # Normal AI reply
             delay = _calc_typing_delay(reply_text)
             _send_typing(bot, telegram_id, delay)
             bot.send_message(telegram_id, reply_text)
@@ -243,12 +302,6 @@ class FAQHandler:
             if not message.text or message.text.startswith('/'):
                 return False
             telegram_id = message.from_user.id
-
-            # Don't block VIP or Account ID messages
-            raw_text = (message.text or "").strip().lower()
-            if raw_text in ["vip", "v.i.p"] or raw_text.isdigit():
-                return True
-
             if self.support_service.is_awaiting_support(telegram_id):
                 return False
             return True
@@ -273,12 +326,17 @@ class FAQHandler:
                 if not text:
                     return
 
-                # If user sends "VIP" or 9-digit ID, process INSTANTLY
-                if text.lower() in ["vip", "v.i.p"] or _looks_like_account_id(text):
+                # Instant processing for direct triggers
+                if (
+                    text.lower() in ["vip", "v.i.p"]
+                    or _extract_exact_9digit_id(text)
+                    or _is_invalid_number_attempt(text)
+                    or _is_already_registered_intent(text)
+                ):
                     self._process_combined_message(telegram_id, text, user)
                     return
 
-                # Small debounce for natural chatting
+                # Conversational AI debounce
                 with _pending_lock:
                     entry = _pending_messages.get(telegram_id)
                     if entry:

@@ -52,7 +52,7 @@ class Config:
     # AI
     AI_TEMPERATURE = float(os.getenv("AI_TEMPERATURE", "0.7"))
     AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "512"))
-    AI_MODEL = os.getenv("AI_MODEL", "openai/gpt-oss-120b")
+    AI_MODEL = os.getenv("AI_MODEL", "openai/gpt-oss-20b")
 
     # Contact / links
     SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "")
@@ -71,14 +71,32 @@ class Config:
     CAPITAL_LOW_THRESHOLD = int(os.getenv("CAPITAL_LOW_THRESHOLD", "4999"))
     CAPITAL_MID_THRESHOLD = int(os.getenv("CAPITAL_MID_THRESHOLD", "9999"))
 
-    # Hot-lead followup timings (in minutes) for Day 1: 15m, 30m, 1h, 5h, 12h
+    # ---- Client follow-up spec ----
+    # Day 1 (hot lead): exactly 4 messages.
+    # Gaps: 15m after last activity, then +45m, then +3h, then +12h.
     HOT_LEAD_DAY1_DELAYS = [
         int(x) for x in os.getenv(
-            "HOT_LEAD_DAY1_DELAYS", "5,15,45,120,300,720"
+            "HOT_LEAD_DAY1_DELAYS", "15,45,180,720"
         ).split(",") if x.strip()
     ]
-    HOT_LEAD_DAY2_PER_DAY = int(os.getenv("HOT_LEAD_DAY2_PER_DAY", "2"))
     HOT_LEAD_IDLE_MINUTES = int(os.getenv("HOT_LEAD_IDLE_MINUTES", "10"))
+
+    # Daily follow-up window: 1:00 PM - 9:00 PM (local/scheduler timezone),
+    # one random time inside this window, max 1 message per day.
+    FOLLOWUP_WINDOW_START_HOUR = int(os.getenv("FOLLOWUP_WINDOW_START_HOUR", "13"))
+    FOLLOWUP_WINDOW_END_HOUR = int(os.getenv("FOLLOWUP_WINDOW_END_HOUR", "21"))
+
+    # Quiet hours: NO follow-up messages between 1:00 AM and 9:00 AM.
+    FOLLOWUP_QUIET_START_HOUR = int(os.getenv("FOLLOWUP_QUIET_START_HOUR", "1"))
+    FOLLOWUP_QUIET_END_HOUR = int(os.getenv("FOLLOWUP_QUIET_END_HOUR", "9"))
+
+    # Cadence: days 1-7 = 1 message/day, days 8-30 = alternate days (8,10,...30), stop after 30.
+    FOLLOWUP_DAILY_DAYS = int(os.getenv("FOLLOWUP_DAILY_DAYS", "7"))
+    FOLLOWUP_MAX_DAYS = int(os.getenv("FOLLOWUP_MAX_DAYS", "30"))
+
+    # Daily follow-up only goes out if the user has been silent this long (minutes),
+    # so we never message someone who just replied a few minutes ago.
+    FOLLOWUP_MIN_IDLE_MINUTES = int(os.getenv("FOLLOWUP_MIN_IDLE_MINUTES", "120"))
 
     # Testimonials media
     TESTIMONIALS_DIR = os.getenv("TESTIMONIALS_DIR", "media/testimonials")
@@ -173,6 +191,26 @@ class Config:
         if self.MAX_VIDEO_SIZE_MB < 1:
             sys.exit("MAX_VIDEO_SIZE_MB must be at least 1")
 
+        for name in [
+            "FOLLOWUP_WINDOW_START_HOUR", "FOLLOWUP_WINDOW_END_HOUR",
+            "FOLLOWUP_QUIET_START_HOUR", "FOLLOWUP_QUIET_END_HOUR"
+        ]:
+            value = getattr(self, name)
+            if not (0 <= value <= 23):
+                sys.exit(f"{name} must be between 0 and 23")
+
+        if self.FOLLOWUP_WINDOW_START_HOUR >= self.FOLLOWUP_WINDOW_END_HOUR:
+            sys.exit("FOLLOWUP_WINDOW_START_HOUR must be earlier than FOLLOWUP_WINDOW_END_HOUR")
+
+        if self.FOLLOWUP_DAILY_DAYS < 1:
+            sys.exit("FOLLOWUP_DAILY_DAYS must be at least 1")
+
+        if self.FOLLOWUP_MAX_DAYS < self.FOLLOWUP_DAILY_DAYS:
+            sys.exit("FOLLOWUP_MAX_DAYS must be >= FOLLOWUP_DAILY_DAYS")
+
+        if not self.HOT_LEAD_DAY1_DELAYS:
+            sys.exit("HOT_LEAD_DAY1_DELAYS must contain at least one delay")
+
     def get_admin_ids(self):
         ids = [int(self.ADMIN_ID)]
         extra = os.getenv("EXTRA_ADMIN_IDS", "")
@@ -260,7 +298,7 @@ class Config:
             "📈 VIP Signals Channel Access\n"
             "🚀 PMS Compounding Strategy Calculator\n"
             "🤖 Automated Bot Beta Access\n\n"
-            "Mee trading start cheyandi and doubts unte support team ni contact avvandi!"
+            "Start your trading journey now, and if you have any doubts, just contact the support team!"
         )
 
     def get_free_channel_link(self):

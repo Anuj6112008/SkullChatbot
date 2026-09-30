@@ -10,13 +10,13 @@ from database import database
 
 logger = logging.getLogger(__name__)
 
-CAPITAL_RESP_LOW = "Eyy,☹️\nNe capital chala takkuva ga undi, deenitho start cheyyochu but chala Slow and Careful ga Trades teeskovali - atleast 6k tho Start cheyyandi"
-CAPITAL_RESP_MID = "Haa parledu😉, chinnaga start chesi, gradual ga daily profits book cheskovachu"
-CAPITAL_RESP_HIGH = "Nice😎, daily consistent ga profits kosam idi satipothadi"
+CAPITAL_RESP_LOW = "Arey yaar….. your capital is too low to get started \n\nI suggest you to have atleast 6k to get consistent profits"
+CAPITAL_RESP_MID = "Thats a good start 🤝, this is good enough to make profits in every session"
+CAPITAL_RESP_HIGH = "👌🏼 Superb, this is enough for fast results"
 
-TESTIMONIAL_INTRO_TEXT = "Look at these Results ☝🏻\n\nThese are the results of our VIP students Using PMS Compounding Strategy for daily trading - Last week aee trading cheyyadam Nerchukunnaru"
+TESTIMONIAL_INTRO_TEXT = "Look at these Results ☝🏻\n\nThese are the results of our VIP students Using PMS Compounding Strategy for daily trading \n\n Same like you, they are also new to Trading"
 
-NO_FEE_TEXT = "Dont worry, joining 𝐅𝐞𝐞 em Ledu, but only serious Learners kae 𝐅𝐫𝐞𝐞 ga join ayye opportunity dorkuthundi."
+NO_FEE_TEXT = "Dont worry, There is no joining 𝐅𝐞𝐞 for VIP community \nBut only serious traders will get the opportunity to Join the VIP \n\nJoining VIP is  𝐅𝐫𝐞𝐞."
 
 VIP_BENEFITS_TEXT = (
     "𝐇𝐞𝐫𝐞 𝐚𝐫𝐞 𝐭𝐡𝐞 𝐯𝐢𝐩 𝐛𝐞𝐧𝐞𝐟𝐢𝐭𝐬 👇\n"
@@ -35,15 +35,15 @@ VIP_BENEFITS_TEXT = (
     "💵 𝟓𝟎% 𝐃𝐞𝐩𝐨𝐬𝐢𝐭 𝐁𝐨𝐧𝐮𝐬\n"
     "🛡️ 𝐒𝐤𝐮𝐥𝐥 𝐓𝐫𝐚𝐝𝐞𝐫 𝐒𝐮𝐩𝐩𝐨𝐫𝐭 𝐓𝐞𝐚𝐦\n"
     "🔥 𝐅𝐮𝐭𝐮𝐫𝐞 𝐄𝐱𝐜𝐥𝐮𝐬𝐢𝐯𝐞 𝐕𝐈𝐏 𝐑𝐞𝐬𝐨𝐮𝐫𝐜𝐞𝐬 & 𝐁𝐞𝐧𝐞𝐟𝐢𝐭𝐬\n\n"
-    "Even though Meeku trading lo ZERO Knowlege unna kani VIP COMMUNITY lo A to Z nerchukovachu"
+    "Even though you have No Trading Experience, you can still earn Daily profits in VIP"
 )
 
 ASK_TO_JOIN_TEXT = "Want to join the 𝐕𝐈𝐏 𝐂𝐨𝐦𝐦𝐮𝐧𝐢𝐭𝐲 🔥?"
 
 REENGAGEMENT_TEXT = (
-    "Hey, mee VIP access registration inka complete avvaledu. "
-    "Mee registration complete chesi VIP group lo join avvadaniki interest unda? "
-    "Emanna doubts unte adagandi 😊"
+    "Your VIP registration is not yet Finished "
+    "If you are intrested to Join the VIP community , kindly finish the registration "
+    "Ping me if u have any doubts ☺️"
 )
 
 REGISTRATION_STEPS_CAPTION = (

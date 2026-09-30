@@ -68,6 +68,12 @@ class OnboardingService:
         if not user:
             return {}
         data = user.get("onboarding_data")
+        if isinstance(data, str):
+            try:
+                import json
+                data = json.loads(data)
+            except Exception:
+                data = None
         return data if isinstance(data, dict) else {}
 
     def set_state(self, telegram_id: int, state: str):
@@ -291,3 +297,65 @@ class OnboardingService:
             database.update_user(telegram_id, {"onboarding_data": data})
         except Exception as e:
             logger.error(f"Failed to mark registration reminder sent for {telegram_id}: {e}")
+
+    # ------------------------------------------------------------------
+    # Follow-up state (stored inside onboarding_data - no DB migration)
+    # Keys used:
+    #   fu_history       - list of already-sent follow-up texts (no repeats)
+    #   fu_day1_total    - total day-1 nudges sent (hard cap, never resets)
+    #   fu_last_sent_date- YYYY-MM-DD (scheduler tz) of last daily follow-up
+    #   fu_due_date      - YYYY-MM-DD the current random due-time belongs to
+    #   fu_due_at        - ISO datetime of today's random 1PM-9PM send moment
+    #   fu_handled_date  - YYYY-MM-DD whose window is already resolved
+    # ------------------------------------------------------------------
+    FOLLOWUP_HISTORY_LIMIT = 50
+
+    def get_followup_history(self, telegram_id: int):
+        data = self.get_data(telegram_id)
+        history = data.get("fu_history")
+        return history if isinstance(history, list) else []
+
+    def get_fu_state(self, telegram_id: int) -> Dict[str, Any]:
+        data = self.get_data(telegram_id)
+        return {
+            "fu_history": data.get("fu_history") if isinstance(data.get("fu_history"), list) else [],
+            "fu_day1_total": int(data.get("fu_day1_total") or 0),
+            "fu_last_sent_date": data.get("fu_last_sent_date"),
+            "fu_due_date": data.get("fu_due_date"),
+            "fu_due_at": data.get("fu_due_at"),
+            "fu_handled_date": data.get("fu_handled_date"),
+        }
+
+    def update_fu_state(self, telegram_id: int, updates: Dict[str, Any]):
+        try:
+            data = self.get_data(telegram_id)
+            data.update(updates)
+            database.update_user(telegram_id, {"onboarding_data": data})
+        except Exception as e:
+            logger.error(f"Failed to update follow-up state for {telegram_id}: {e}")
+
+    def record_followup(self, telegram_id: int, text: str, count_day1: bool = False):
+        """Remember a sent follow-up so it is never repeated, and stamp counters."""
+        try:
+            data = self.get_data(telegram_id)
+            history = data.get("fu_history") if isinstance(data.get("fu_history"), list) else []
+            if text:
+                history = [h for h in history if h != text]
+                history.append(text)
+                history = history[-self.FOLLOWUP_HISTORY_LIMIT:]
+            data["fu_history"] = history
+            if count_day1:
+                data["fu_day1_total"] = int(data.get("fu_day1_total") or 0) + 1
+            database.update_user(telegram_id, {
+                "onboarding_data": data,
+                "last_followup_at": get_current_timestamp()
+            })
+        except Exception as e:
+            logger.error(f"Failed to record follow-up for {telegram_id}: {e}")
+
+    def get_day1_followup_total(self, telegram_id: int) -> int:
+        data = self.get_data(telegram_id)
+        try:
+            return int(data.get("fu_day1_total") or 0)
+        except (TypeError, ValueError):
+            return 0

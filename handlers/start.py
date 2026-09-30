@@ -42,7 +42,7 @@ def _check_user_membership(bot: TeleBot, channel_service: ChannelService, telegr
         return member.status in ["member", "administrator", "creator", "restricted"]
     except Exception as e:
         logger.warning(f"Could not check membership for {telegram_id} in {channel_id}: {e}")
-        return True  # Allow user to proceed if channel check fails
+        return True
 
 
 def register_start_handlers(
@@ -66,7 +66,7 @@ def register_start_handlers(
             username = user.username
             first_name = user.first_name
             last_name = user.last_name
-            display_name = (first_name or username or "TRADER").upper()
+            display_name = first_name or username or "Trader"
 
             user_data = database.get_user(telegram_id)
             if not user_data:
@@ -94,7 +94,7 @@ def register_start_handlers(
                 _send_typing(bot, telegram_id, 1.5)
                 bot.send_message(
                     telegram_id,
-                    "Welcome back! You are an active VIP member. Feel free to ask any questions or reach out to support.",
+                    f"Welcome back! You are an active VIP member. Feel free to ask any questions or reach out to @traderskull.",
                     reply_markup=get_start_keyboard()
                 )
                 return
@@ -128,11 +128,12 @@ def register_start_handlers(
             except Exception as ce:
                 logger.warning(f"Free channel check bypassed due to: {ce}")
 
-            # 4. Direct Start Message (Nisha VIP Greeting)
-            _send_typing(bot, telegram_id, 1.5)
+            # 4. Direct Start Message (Exact Requested Format)
+            _send_typing(bot, telegram_id, 1.2)
             greeting_msg = (
-                f"HI {display_name}, I AM NISHA FROM SKULL SUPPORT TEAM "
-                f"WRITE VIP AND SEND US TO CONTINUE THE CHAT"
+                f"👋 Hi {display_name} !\n\n"
+                "I’m Nisha from the Skull Support Team 🖤\n\n"
+                "If you’re here for VIP Registration, just type VIP 👇"
             )
             bot.send_message(telegram_id, greeting_msg)
 
@@ -140,7 +141,7 @@ def register_start_handlers(
             logger.error(f"Start command failed for user {message.from_user.id}: {e}", exc_info=True)
             bot.send_message(
                 message.chat.id,
-                "HI, I AM NISHA FROM SKULL SUPPORT TEAM WRITE VIP AND SEND US TO CONTINUE THE CHAT"
+                "👋 Hi !\n\nI’m Nisha from the Skull Support Team 🖤\n\nIf you’re here for VIP Registration, just type VIP 👇"
             )
 
     @bot.callback_query_handler(func=lambda call: call.data == "start_registration")

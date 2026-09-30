@@ -109,10 +109,10 @@ def register_join_request_handlers(bot: TeleBot, onboarding_service: OnboardingS
                     bot.send_message(telegram_id, "Hello, Im Nisha ☺️ From Skull Support Team")
 
                     _send_typing(bot, telegram_id, 1.5)
-                    bot.send_message(telegram_id, "Indake mee Joining request Accept chesa")
+                    bot.send_message(telegram_id, "I have just approved your joining request")
 
                     _send_typing(bot, telegram_id, 1.2)
-                    bot.send_message(telegram_id, "Meeku Trading experience unda?")
+                    bot.send_message(telegram_id, "Do you have any experience in Trading ?")
 
                     onboarding_service.set_state(telegram_id, STATE_AWAITING_EXPERIENCE)
                 except Exception as e:

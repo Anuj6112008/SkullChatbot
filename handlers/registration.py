@@ -1,3 +1,4 @@
+import re
 import logging
 from telebot import TeleBot
 from telebot.types import Message, CallbackQuery
@@ -5,10 +6,35 @@ from config import config
 from database import database
 from services.verification import VerificationService
 from services.registration import RegistrationService
+from services.ai import ai_service
 from keyboards import get_start_keyboard, get_registration_cancel_keyboard
 from utils import get_current_timestamp, sanitize_text, get_user_full_name
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_exact_9digit_id(text: str) -> str | None:
+    """Strictly extracts 9-digit trading ID only."""
+    if not text:
+        return None
+    cleaned = re.sub(r"[\s\-#:]", "", text.strip())
+    if cleaned.isdigit() and len(cleaned) == 9:
+        return cleaned
+    m = re.search(r"(?:account\s*id|id|acc(?:ount)?)\s*[:\-]?\s*(\d{9})\b", text, re.I)
+    if m:
+        return m.group(1)
+    return None
+
+
+def _is_invalid_number_attempt(text: str) -> bool:
+    """Check if input is pure numbers but NOT 9 digits."""
+    if not text:
+        return False
+    cleaned = re.sub(r"[\s\-#:]", "", text.strip())
+    if cleaned.isdigit() and len(cleaned) != 9:
+        return True
+    return False
+
 
 class RegistrationHandler:
     def __init__(self, bot: TeleBot, registration_service: RegistrationService = None):
@@ -20,66 +46,124 @@ class RegistrationHandler:
     def register(self):
         bot = self.bot
 
-        @bot.message_handler(func=lambda message: self.registration_service.is_awaiting_account_id(message.from_user.id))
+        @bot.message_handler(func=lambda message: self.registration_service.is_awaiting_account_id(message.from_user.id), content_types=['text'])
         def registration_account_id_handler(message: Message):
             try:
                 telegram_id = message.from_user.id
-                account_id = sanitize_text(message.text)
-                if not account_id:
+                raw_text = sanitize_text(message.text)
+                if not raw_text:
                     bot.send_message(
                         telegram_id,
-                        "Please enter a valid trading account ID:",
-                        reply_markup=get_registration_cancel_keyboard()
+                        "Please enter your **9-digit Trading Account ID** (Example: 123456789):",
+                        reply_markup=get_registration_cancel_keyboard(),
+                        parse_mode="Markdown"
                     )
                     return
-                user = database.get_user(telegram_id)
+
+                user = database.get_user(telegram_id) or {}
                 if not user:
+                    user = database.create_user({
+                        "telegram_id": telegram_id,
+                        "username": message.from_user.username or "",
+                        "first_name": message.from_user.first_name or "",
+                        "last_name": message.from_user.last_name or "",
+                        "member_type": "normal",
+                        "joined_at": get_current_timestamp(),
+                        "last_activity": get_current_timestamp()
+                    })
+
+                # 1. Exact 9-Digit Trading Account ID Validation
+                account_id_9 = _extract_exact_9digit_id(raw_text)
+                if account_id_9:
+                    if user.get("verification_status") == "approved":
+                        bot.send_message(
+                            telegram_id,
+                            "You are already registered and verified! ✅",
+                            reply_markup=get_start_keyboard()
+                        )
+                        self.registration_service.clear_registration_state(telegram_id)
+                        return
+
+                    if user.get("registration_status") == "pending_verification":
+                        bot.send_message(
+                            telegram_id,
+                            "Your registration is already pending verification. ⏳",
+                            reply_markup=get_start_keyboard()
+                        )
+                        self.registration_service.clear_registration_state(telegram_id)
+                        return
+
+                    first_name = user.get("first_name") or message.from_user.first_name or ""
+                    last_name = user.get("last_name") or message.from_user.last_name or ""
+                    full_name = f"{first_name} {last_name}".strip() or "Trader"
+                    username = user.get("username") or message.from_user.username or ""
+
+                    experience = user.get("experience") or user.get("trading_experience")
+                    age = user.get("age")
+                    profession = user.get("profession") or user.get("occupation")
+                    capital = user.get("capital") or user.get("trading_capital")
+
+                    registration_data = {
+                        "telegram_id": telegram_id,
+                        "registration_data": {
+                            "trading_account_id": str(account_id_9),
+                            "full_name": full_name,
+                            "username": username,
+                            "experience": experience,
+                            "age": age,
+                            "profession": profession,
+                            "capital": capital,
+                            "source": "direct_chat"
+                        },
+                        "verification_status": "pending"
+                    }
+
+                    registration = database.create_registration(registration_data)
+                    database.update_user(telegram_id, {
+                        "account_id": str(account_id_9),
+                        "registration_status": "pending_verification",
+                        "onboarding_state": "submitted_for_verification",
+                        "last_activity": get_current_timestamp()
+                    })
+                    self.registration_service.clear_registration_state(telegram_id)
+
                     bot.send_message(
                         telegram_id,
-                        "User not found. Please start with /start first.",
-                        reply_markup=get_start_keyboard()
+                        f"✅ **Account ID Received:** `{account_id_9}`\n\n"
+                        "Your registration is now pending manual verification. ⏳\n"
+                        "Once approved, your **1-Time VIP Access Link** will be sent here!",
+                        parse_mode="Markdown"
                     )
-                    self.registration_service.clear_registration_state(telegram_id)
+
+                    if registration:
+                        self.verification_service.notify_admin_about_registration(registration)
+
+                    logger.info(f"Valid 9-digit account ID submitted by {telegram_id}: {account_id_9}")
                     return
-                if user.get("verification_status") == "approved":
+
+                # 2. Check if user entered numbers of INVALID length (e.g. 5, 8, 10, 11 digits)
+                if _is_invalid_number_attempt(raw_text):
                     bot.send_message(
                         telegram_id,
-                        "You are already registered and verified! ✅",
-                        reply_markup=get_start_keyboard()
+                        "⚠️ **Invalid Account ID**\n\n"
+                        "Your Trading account Id must strictly be only 9 digits\n\n"
+                        "👉 **Example:** `123456789`\n\n"
+                        "Kindly resend your 9 digit trading ID correctly 📝",
+                        reply_markup=get_registration_cancel_keyboard(),
+                        parse_mode="Markdown"
                     )
-                    self.registration_service.clear_registration_state(telegram_id)
                     return
-                if user.get("registration_status") == "pending_verification":
-                    bot.send_message(
-                        telegram_id,
-                        "Your registration is already pending verification. ⏳",
-                        reply_markup=get_start_keyboard()
-                    )
-                    self.registration_service.clear_registration_state(telegram_id)
-                    return
-                registration_data = {
-                    "telegram_id": telegram_id,
-                    "registration_data": {
-                        "trading_account_id": account_id,
-                        "full_name": user.get("first_name", ""),
-                        "username": user.get("username", "")
-                    },
-                    "verification_status": "pending"
-                }
-                registration = database.create_registration(registration_data)
-                database.update_user(telegram_id, {
-                    "registration_status": "pending_verification"
-                })
-                self.registration_service.clear_registration_state(telegram_id)
-                bot.send_message(
-                    telegram_id,
-                    "✅ Registration submitted!\n\nYour registration is now pending verification.\n\nYou will be notified once an admin approves your registration.",
-                    reply_markup=get_start_keyboard()
+
+                # 3. If user sent words (e.g. 'Brooo', 'Abc', questions) -> Route to AI
+                response = ai_service.generate_response(raw_text, user)
+                reply_text = response.get(
+                    "response",
+                    "Please send your **9-digit Trading Account ID** so we can verify your VIP access! 🆔"
                 )
-                self.verification_service.notify_admin_about_registration(registration)
-                logger.info(f"Registration completed for user {telegram_id} with account ID: {account_id}")
+                bot.send_message(telegram_id, reply_text)
+
             except Exception as e:
-                logger.error(f"Registration account ID handler failed: {e}")
+                logger.error(f"Registration account ID handler failed: {e}", exc_info=True)
                 bot.send_message(
                     message.from_user.id,
                     "Error processing your registration. Please try again.",
@@ -205,6 +289,7 @@ class RegistrationHandler:
     def is_in_registration(self, telegram_id: int) -> bool:
         session = self.user_sessions.get(telegram_id)
         return session is not None and session.get("step", 0) > 0
+
 
 def register_registration_handlers(bot: TeleBot, registration_service: RegistrationService = None):
     handler = RegistrationHandler(bot, registration_service)
